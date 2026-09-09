@@ -36,6 +36,16 @@ const router = createRouter({
       name: 'proyecto-detalle',
       component: () => import('../views/ProyectoDetalleView.vue'),
     },
+    {
+      path: '/servicio',
+      name: 'servicio',
+      component: () => import('../views/ServicioView.vue'),
+    },
+    {
+      path: '/servicio/:id',
+      name: 'servicio-detalle',
+      component: () => import('../views/ServicioDetalleView.vue'),
+    },
   ],
 })
 

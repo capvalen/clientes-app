@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { IconX } from '@tabler/icons-vue'
 
-defineProps<{ title: string }>()
+defineProps<{ title: string; size?: 'sm' | 'md' }>()
 const emit = defineEmits<{ close: [] }>()
 
 function onKey(e: KeyboardEvent) {
@@ -16,7 +16,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 <template>
   <Teleport to="body">
     <div class="overlay" @click.self="emit('close')">
-      <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal" :class="size === 'sm' ? 'modal-sm' : ''" role="dialog" aria-modal="true">
         <header class="modal-head">
           <h2>{{ title }}</h2>
           <button class="close" type="button" @click="emit('close')" aria-label="Cerrar">
@@ -55,12 +55,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
+.modal-sm {
+  max-width: 400px;
+}
+
 .modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 0;
 }
 
 .modal-head h2 {
