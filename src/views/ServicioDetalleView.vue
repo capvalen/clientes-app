@@ -5,17 +5,24 @@ import html2canvas from 'html2canvas'
 import {
   IconBuilding,
   IconBuildingBank,
+  IconCalendar,
   IconCamera,
+  IconCash,
   IconCheck,
   IconCoin,
   IconDeviceMobile,
   IconEdit,
+  IconEye,
+  IconEyeOff,
   IconLoader,
+  IconNotes,
   IconPaperclip,
   IconPhone,
   IconPlus,
   IconShare,
+  IconTools,
   IconTrash,
+  IconUser,
   IconWallet,
   IconX,
 } from '@tabler/icons-vue'
@@ -28,18 +35,19 @@ import {
   createPago,
   updatePago,
   deletePago,
-  getComprobanteUrl,
+  getComprobanteFiles,
   getToken,
-  METODOS_PAGO,
   type Servicio,
   type Pago,
   type Cliente,
 } from '../api/pocketbase'
-import { capitalize, formatDate, formatDateTime } from '../utils/format'
+import { capitalize, formatDate, formatDateTime, formatFechaHora, pbDateTime, upperFirst } from '../utils/format'
 import { sumarPeriocidad, PERIOCIDAD_LABEL } from '../utils/cuotas'
+import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
 import DropzoneFile from '../components/DropzoneFile.vue'
+import MetodoPagoPicker from '../components/MetodoPagoPicker.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -52,11 +60,15 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 
-const crumbs = computed(() => [
-  { label: 'Clientes', to: '/cliente' },
-  { label: cliente.value?.nombre ?? '…', to: cliente.value ? `/cliente/${cliente.value.id}` : undefined },
-  { label: servicio.value?.servicio ?? '…' },
-])
+const crumbs = computed(() => {
+  const clienteTo = cliente.value ? `/cliente/${cliente.value.id}?tab=servicios` : undefined
+  return [
+    { label: 'Clientes', to: '/cliente' },
+    { label: cliente.value?.nombre ?? '…', to: clienteTo },
+    { label: 'Servicios', to: clienteTo },
+    { label: servicio.value?.servicio ?? '…' },
+  ]
+})
 
 // Edición de campos primarios
 const editing = ref(false)
@@ -137,6 +149,7 @@ const METODO_PAGO_INFO: Record<string, { color: string; bg: string; icon: unknow
   Yape: { color: '#0969da', bg: '#ddf4ff', icon: IconDeviceMobile },
   Plin: { color: '#8250df', bg: '#fbefff', icon: IconPhone },
   BCP: { color: '#e5484d', bg: '#ffebe9', icon: IconBuildingBank },
+  Interbank: { color: '#00a650', bg: '#e3fbe9', icon: IconBuildingBank },
   'Caja Huancayo': { color: '#9a6700', bg: '#fff8c5', icon: IconBuilding },
 }
 
@@ -166,7 +179,7 @@ const pagoForm = ref({
   metodo_pago: 'Efectivo',
   observaciones: '',
 })
-const comprobante = ref<File | null>(null)
+const comprobante = ref<File[]>([])
 
 // Agregar deuda
 const showDeudaForm = ref(false)
@@ -198,10 +211,12 @@ async function guardarDeuda() {
       const fecha = sumarPeriocidad(fechaBase, servicio.value.periocidad)
       await createPago({
         monto,
-        fecha,
+        adelanto: 0,
+        que_es: 'deuda',
+        fecha: pbDateTime(fecha), // fecha con hora (formato PocketBase)
         estado: 'pendiente',
         metodo_pago: 'Efectivo',
-        observaciones: deudaForm.value.observaciones,
+        observaciones: upperFirst(deudaForm.value.observaciones),
         entidad_id: servicio.value.id,
         entidad_tipo: 'servicio',
       })
@@ -219,9 +234,13 @@ async function guardarDeuda() {
 
 // Detalle de pago
 const selectedPago = ref<Pago | null>(null)
-const comprobanteUrl = ref<string | null>(null)
 const ticketRef = ref<HTMLElement | null>(null)
 const capturando = ref(false)
+
+/** Comprobantes adjuntos del pago seleccionado (nombre + URL) */
+const comprobanteFiles = computed(() =>
+  selectedPago.value ? getComprobanteFiles(selectedPago.value) : [],
+)
 
 // Cronograma de deudas
 const showCronograma = ref(false)
@@ -275,45 +294,114 @@ async function capturarCronograma() {
   }
 }
 
-// Edición de pago
+// Edición de pago (solo método de pago, comprobante y observaciones)
 const editingPago = ref<Pago | null>(null)
 const pagoEditForm = ref({
   monto: '',
-  fecha: '',
-  estado: 'pendiente',
   metodo_pago: 'Efectivo',
   observaciones: '',
 })
-const nuevoComprobante = ref<File | null>(null)
+const nuevoComprobante = ref<File[]>([])
+
+/** Comprobantes ya guardados del pago en edición (solo lectura) */
+const existingComprobantes = computed(() =>
+  editingPago.value ? getComprobanteFiles(editingPago.value) : [],
+)
+
+// Realizar pago: abonar a una deuda hasta completarla
+const realizarPagoTarget = ref<Pago | null>(null)
+const realizarPagoMonto = ref('')
+const realizarPagoMetodo = ref('Efectivo')
+
+/** Saldo de la deuda seleccionada (monto - adelanto) */
+const saldoDeuda = computed(() => {
+  const p = realizarPagoTarget.value
+  if (!p) return 0
+  return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
+})
+
+function openRealizarPago(pago: Pago) {
+  realizarPagoTarget.value = pago
+  const saldo = Math.max(0, (Number(pago.monto) || 0) - (Number(pago.adelanto) || 0))
+  realizarPagoMonto.value = String(saldo)
+  realizarPagoMetodo.value = pago.metodo_pago || 'Efectivo'
+}
+
+function closeRealizarPago() {
+  realizarPagoTarget.value = null
+  realizarPagoMonto.value = ''
+  realizarPagoMetodo.value = 'Efectivo'
+}
+
+async function guardarRealizarPago() {
+  const pago = realizarPagoTarget.value
+  if (!pago) return
+  const abono = Number(realizarPagoMonto.value) || 0
+  if (abono <= 0) return
+  saving.value = true
+  error.value = ''
+  try {
+    const total = Number(pago.monto) || 0
+    const nuevoAdelanto = Math.min(total, (Number(pago.adelanto) || 0) + abono)
+    // Si el adelanto cubre el monto, el registro entero pasa a 'pago' pagado
+    const completo = nuevoAdelanto >= total
+    const data: Partial<Pago> = {
+      adelanto: nuevoAdelanto,
+      metodo_pago: realizarPagoMetodo.value,
+    }
+    if (completo) {
+      data.estado = 'pagado'
+      data.que_es = 'pago'
+    }
+    await updatePago(pago.id, data)
+    closeRealizarPago()
+    pagos.value = await listPagosPorEntidad(id, 'servicio')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al registrar el pago'
+  } finally {
+    saving.value = false
+  }
+}
 
 function openPagoEdit(pago: Pago) {
   pagoEditForm.value = {
     monto: String(pago.monto ?? ''),
-    fecha: (pago.fecha ?? '').slice(0, 10),
-    estado: pago.estado ?? 'pendiente',
     metodo_pago: pago.metodo_pago || 'Efectivo',
     observaciones: pago.observaciones ?? '',
   }
-  nuevoComprobante.value = null
+  nuevoComprobante.value = []
   editingPago.value = pago
 }
 
 async function savePagoEdit() {
   if (!editingPago.value) return
+  const esDeuda = editingPago.value.que_es === 'deuda'
   saving.value = true
   error.value = ''
   try {
-    await updatePago(
-      editingPago.value.id,
-      {
-        monto: Number(pagoEditForm.value.monto) || 0,
-        fecha: pagoEditForm.value.fecha,
-        estado: pagoEditForm.value.estado as Pago['estado'],
-        metodo_pago: pagoEditForm.value.metodo_pago,
-        observaciones: pagoEditForm.value.observaciones,
-      },
-      nuevoComprobante.value,
-    )
+    const data: Partial<Pago> = {
+      metodo_pago: pagoEditForm.value.metodo_pago,
+      observaciones: pagoEditForm.value.observaciones,
+    }
+
+    // Solo las deudas permiten modificar el monto
+    if (esDeuda) {
+      const montoNuevo = Number(pagoEditForm.value.monto) || 0
+      data.monto = montoNuevo
+      // Si el abono supera el nuevo monto, se ajusta y el registro pasa a pago
+      const adelanto = Number(editingPago.value.adelanto) || 0
+      if (montoNuevo > 0 && adelanto >= montoNuevo) {
+        data.adelanto = montoNuevo
+        data.estado = 'pagado'
+        data.que_es = 'pago'
+      }
+    }
+
+    await updatePago(editingPago.value.id, data, nuevoComprobante.value, {
+      // Los nuevos comprobantes se AÑADEN a los que ya tiene el registro
+      appendComprobantes: true,
+    })
+
     editingPago.value = null
     pagos.value = await listPagosPorEntidad(id, 'servicio')
   } catch (e) {
@@ -339,17 +427,12 @@ async function eliminarPago() {
   }
 }
 
-function onEditFileChange(f: File | null) {
-  nuevoComprobante.value = f
+function onEditFileChange(files: File[]) {
+  nuevoComprobante.value = files
 }
 
 function openPagoDetalle(pago: Pago) {
   selectedPago.value = pago
-  try {
-    comprobanteUrl.value = getComprobanteUrl(pago)
-  } catch {
-    comprobanteUrl.value = null
-  }
 }
 
 async function capturarTicket() {
@@ -357,14 +440,16 @@ async function capturarTicket() {
   if (!el || !selectedPago.value) return
   capturando.value = true
   try {
-    const img = el.querySelector('img.thumb') as HTMLImageElement | null
-    let originalSrc: string | null = null
-    if (img && img.src) {
-      originalSrc = img.src
+    // Convertir las miniaturas a dataURL para evitar el bloqueo cross-origin del canvas
+    const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img.thumb'))
+    const originals: { img: HTMLImageElement; src: string }[] = []
+    const headers: Record<string, string> = {}
+    const token = getToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    for (const img of imgs) {
+      if (!img.src) continue
+      originals.push({ img, src: img.src })
       try {
-        const headers: Record<string, string> = {}
-        const token = getToken()
-        if (token) headers['Authorization'] = `Bearer ${token}`
         const res = await fetch(img.src, { headers })
         const blob = await res.blob()
         const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -374,11 +459,11 @@ async function capturarTicket() {
           reader.readAsDataURL(blob)
         })
         img.src = dataUrl
-        await new Promise((r) => setTimeout(r, 100))
       } catch {
         // si falla, se captura sin la imagen
       }
     }
+    if (originals.length) await new Promise((r) => setTimeout(r, 100))
 
     const canvas = await html2canvas(el, {
       backgroundColor: '#ffffff',
@@ -386,7 +471,9 @@ async function capturarTicket() {
       useCORS: true,
     })
 
-    if (img && originalSrc) img.src = originalSrc
+    originals.forEach(({ img, src }) => {
+      img.src = src
+    })
 
     const link = document.createElement('a')
     link.download = `pago-${selectedPago.value.id}.png`
@@ -405,12 +492,12 @@ function openPagoForm() {
     metodo_pago: 'Efectivo',
     observaciones: '',
   }
-  comprobante.value = null
+  comprobante.value = []
   showPagoForm.value = true
 }
 
-function onFileChange(f: File | null) {
-  comprobante.value = f
+function onFileChange(files: File[]) {
+  comprobante.value = files
 }
 
 async function guardarPago() {
@@ -421,6 +508,8 @@ async function guardarPago() {
     await createPago(
       {
         monto: Number(pagoForm.value.monto) || 0,
+        adelanto: Number(pagoForm.value.monto) || 0,
+        que_es: 'pago',
         fecha: new Date().toISOString().slice(0, 10),
         metodo_pago: pagoForm.value.metodo_pago,
         estado: 'pagado',
@@ -473,6 +562,15 @@ onMounted(load)
       <div class="head">
         <h1>{{ servicio.servicio }}</h1>
         <div class="head-actions">
+          <button
+            class="ghost"
+            :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
+            @click="toggleMontos"
+          >
+            <IconEyeOff v-if="showMontos" :size="16" />
+            <IconEye v-else :size="16" />
+            {{ showMontos ? 'Ocultar montos' : 'Ver montos' }}
+          </button>
           <button class="ghost" @click="openCronograma">
             <IconShare :size="16" /> Compartir cronograma de deudas
           </button>
@@ -487,7 +585,7 @@ onMounted(load)
       <!-- Valores del servicio -->
       <section class="card">
         <dl class="fields">
-          <div><dt>Total</dt><dd class="total">S/ {{ Number(servicio.total || 0).toFixed(2) }}</dd></div>
+          <div><dt>Total</dt><dd class="total">{{ monto(servicio.total) }}</dd></div>
           <div><dt>Periocidad</dt><dd>{{ PERIOCIDAD_LABEL[servicio.periocidad] }}</dd></div>
           <div><dt>Duración (días)</dt><dd>{{ servicio.duracion_dias || 0 }}</dd></div>
           <div><dt>Estado</dt><dd>{{ capitalize(servicio.estado) }}</dd></div>
@@ -584,11 +682,7 @@ onMounted(load)
             <div class="grid">
               <label>
                 Monto por pago (S/)
-                <input
-                  :value="`S/ ${Number(servicio?.total || 0).toFixed(2)}`"
-                  type="text"
-                  disabled
-                />
+                <input :value="monto(servicio?.total)" type="text" disabled />
               </label>
               <label>
                 # temporadas
@@ -622,11 +716,9 @@ onMounted(load)
                 Monto (S/) *
                 <input v-model="pagoForm.monto" type="number" min="0" step="0.01" required />
               </label>
-              <label>
+              <label class="full">
                 Método de pago
-                <select v-model="pagoForm.metodo_pago">
-                  <option v-for="m in METODOS_PAGO" :key="m" :value="m">{{ m }}</option>
-                </select>
+                <MetodoPagoPicker v-model="pagoForm.metodo_pago" />
               </label>
               <label class="full">
                 Comprobante (PDF o imagen)
@@ -655,8 +747,10 @@ onMounted(load)
           <li v-for="pago in pagos" :key="pago.id">
             <div class="pago-wrap">
               <button class="pago-item" type="button" @click="openPagoDetalle(pago)">
-                <strong class="monto">S/ {{ Number(pago.monto || 0).toFixed(2) }}</strong>
-                <span v-if="pago.fecha"> · {{ formatDateTime(pago.fecha) }}</span>
+                <strong class="monto">{{ monto(pago.monto) }}</strong>
+                <span class="pago-sep">·</span>
+                <span class="pago-desc">{{ pago.observaciones || '' }}</span>
+                <span v-if="pago.que_es === 'deuda'" class="que-es-badge">Deuda</span>
                 <span
                   v-if="pago.metodo_pago && pago.estado !== 'pendiente'"
                   class="metodo-badge"
@@ -666,18 +760,25 @@ onMounted(load)
                   {{ pago.metodo_pago }}
                 </span>
                 <a
-                  v-if="pago.comprobante"
+                  v-for="file in getComprobanteFiles(pago)"
+                  :key="file.name"
                   class="adjunto"
-                  :href="getComprobanteUrl(pago) ?? '#'"
+                  :href="file.url"
                   target="_blank"
                   rel="noopener"
-                  title="Abrir comprobante adjunto"
+                  :title="`Abrir ${file.name}`"
                   @click.stop
                 >
                   <IconPaperclip :size="16" />
                 </a>
               </button>
-              <p v-if="pago.observaciones" class="pago-obs">{{ pago.observaciones }}</p>
+              <span class="pago-fecha">
+                <IconCalendar :size="13" />
+                {{ formatFechaHora(pago.fecha) }}
+              </span>
+              <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
+                Adelanto: {{ monto(pago.adelanto) }}
+              </span>
             </div>
             <span
               class="badge"
@@ -685,6 +786,15 @@ onMounted(load)
             >
               {{ pagoInfo(pago.estado).label }}
             </span>
+            <button
+              v-if="pago.estado === 'pendiente'"
+              class="realizar-pago"
+              type="button"
+              title="Realizar pago"
+              @click="openRealizarPago(pago)"
+            >
+              <IconCash :size="16" /> Realizar pago
+            </button>
             <button
               class="edit-pago"
               type="button"
@@ -695,6 +805,52 @@ onMounted(load)
             </button>
           </li>
         </ul>
+
+        <!-- Realizar pago (abonar a una deuda) -->
+        <Modal
+          v-if="realizarPagoTarget"
+          title="Realizar pago"
+          size="sm"
+          @close="closeRealizarPago"
+        >
+          <form class="form" @submit.prevent="guardarRealizarPago">
+            <dl class="fields resumen">
+              <div v-if="realizarPagoTarget.observaciones" class="full">
+                <dt>Descripción</dt>
+                <dd>{{ realizarPagoTarget.observaciones }}</dd>
+              </div>
+              <div><dt>Total</dt><dd>{{ monto(realizarPagoTarget.monto) }}</dd></div>
+              <div><dt>Abonado</dt><dd class="abonado">{{ monto(realizarPagoTarget.adelanto) }}</dd></div>
+              <div><dt>Pendiente</dt><dd class="restante">{{ monto(saldoDeuda) }}</dd></div>
+            </dl>
+            <div class="grid">
+              <label class="full">
+                Método de pago
+                <MetodoPagoPicker v-model="realizarPagoMetodo" />
+              </label>
+              <label class="full">
+                Monto a pagar (S/) *
+                <input
+                  v-model="realizarPagoMonto"
+                  type="number"
+                  min="0"
+                  :max="saldoDeuda"
+                  step="0.01"
+                  required
+                />
+              </label>
+            </div>
+            <p v-if="error" class="error">{{ error }}</p>
+            <div class="row">
+              <button type="submit" class="primary" :disabled="saving">
+                <IconLoader v-if="saving" :size="18" class="spin" />
+                <IconCash v-else :size="18" />
+                {{ saving ? 'Guardando…' : 'Registrar pago' }}
+              </button>
+              <button type="button" class="ghost" @click="closeRealizarPago">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
 
         <!-- Constancia de pago (ticket) -->
         <Modal
@@ -707,39 +863,41 @@ onMounted(load)
             <div class="ticket">
               <div class="ticket-head">
                 <img src="/infocat_transparente.png" alt="Infocat" class="ticket-logo" />
-                <strong>Gestión de Clientes - Infocat</strong>
-                <span>Comprobante de pago</span>
+                <strong>{{ selectedPago.que_es === 'deuda' ? 'Registro de Deuda' : 'Constancia de pago' }}</strong>
               </div>
 
               <div class="ticket-sep"></div>
 
               <div class="ticket-row">
-                <span>Servicio</span>
+                <span><IconTools :size="14" /> Servicio</span>
                 <strong>{{ servicio?.servicio || '—' }}</strong>
               </div>
               <div class="ticket-row">
-                <span>Cliente</span>
+                <span><IconUser :size="14" /> Cliente</span>
                 <strong>{{ cliente?.nombre || '—' }}</strong>
               </div>
-              <div class="ticket-row">
-                <span>Total del servicio</span>
-                <strong>S/ {{ Number(servicio?.total || 0).toFixed(2) }}</strong>
+              <div v-if="selectedPago.observaciones" class="ticket-row">
+                <span><IconNotes :size="14" /> Detalles</span>
+                <strong class="pre">{{ selectedPago.observaciones }}</strong>
               </div>
 
               <div class="ticket-sep"></div>
 
-              <div class="ticket-monto">
-                S/ {{ Number(selectedPago.monto || 0).toFixed(2) }}
+              <div class="ticket-estado-label" :class="{ deuda: selectedPago.que_es === 'deuda' }">
+                {{ selectedPago.que_es === 'deuda' ? 'Adeuda' : 'Pagado' }}
+              </div>
+              <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
+                <span class="ticket-moneda">S/</span> {{ Number(selectedPago.monto || 0).toFixed(2) }}
               </div>
 
               <div class="ticket-sep"></div>
 
               <div class="ticket-row">
-                <span>Fecha</span>
+                <span><IconCalendar :size="14" /> Fecha</span>
                 <strong>{{ formatDateTime(selectedPago.fecha) }}</strong>
               </div>
               <div v-if="selectedPago.estado !== 'pendiente'" class="ticket-row">
-                <span>Método de pago</span>
+                <span><IconWallet :size="14" /> Método de pago</span>
                 <span
                   class="metodo-badge"
                   :style="{ color: metodoInfo(selectedPago.metodo_pago).color, background: metodoInfo(selectedPago.metodo_pago).bg }"
@@ -749,7 +907,7 @@ onMounted(load)
                 </span>
               </div>
               <div class="ticket-row">
-                <span>Estado</span>
+                <span><IconCheck :size="14" /> Estado</span>
                 <span
                   class="badge"
                   :style="{ color: pagoInfo(selectedPago.estado).color, background: pagoInfo(selectedPago.estado).bg }"
@@ -757,21 +915,19 @@ onMounted(load)
                   {{ pagoInfo(selectedPago.estado).label }}
                 </span>
               </div>
-              <div v-if="selectedPago.observaciones" class="ticket-row">
-                <span>Observaciones</span>
-                <strong class="pre">{{ selectedPago.observaciones }}</strong>
-              </div>
 
-              <div v-if="comprobanteUrl" class="ticket-sep"></div>
+              <div v-if="comprobanteFiles.length" class="ticket-sep"></div>
 
-              <div v-if="comprobanteUrl" class="ticket-adjunto">
-                <span>Adjunto</span>
-                <a v-if="esImagen(selectedPago.comprobante)" :href="comprobanteUrl" target="_blank" rel="noopener">
-                  <img :src="comprobanteUrl" alt="Comprobante" class="thumb" />
-                </a>
-                <a v-else :href="comprobanteUrl" target="_blank" rel="noopener">
-                  <IconPaperclip :size="16" /> Ver comprobante
-                </a>
+              <div v-if="comprobanteFiles.length" class="ticket-adjunto">
+                <span>Adjuntos</span>
+                <template v-for="file in comprobanteFiles" :key="file.name">
+                  <a v-if="esImagen(file.name)" :href="file.url" target="_blank" rel="noopener">
+                    <img :src="file.url" alt="Comprobante" class="thumb" />
+                  </a>
+                  <a v-else :href="file.url" target="_blank" rel="noopener">
+                    <IconPaperclip :size="16" /> {{ file.name }}
+                  </a>
+                </template>
               </div>
             </div>
           </div>
@@ -794,31 +950,17 @@ onMounted(load)
         >
           <form class="form" @submit.prevent="savePagoEdit">
             <div class="grid">
-              <label>
+              <label v-if="editingPago.que_es === 'deuda'">
                 Monto (S/) *
                 <input v-model="pagoEditForm.monto" type="number" min="0" step="0.01" required />
               </label>
-              <label>
-                Fecha
-                <input v-model="pagoEditForm.fecha" type="date" />
-              </label>
-              <label>
-                Estado
-                <select v-model="pagoEditForm.estado">
-                  <option value="pendiente">Pendiente</option>
-                  <option value="pagado">Pagado</option>
-                  <option value="anulado">Anulado</option>
-                </select>
-              </label>
-              <label>
+              <label class="full">
                 Método de pago
-                <select v-model="pagoEditForm.metodo_pago">
-                  <option v-for="m in METODOS_PAGO" :key="m" :value="m">{{ m }}</option>
-                </select>
+                <MetodoPagoPicker v-model="pagoEditForm.metodo_pago" />
               </label>
               <label class="full">
                 Comprobante (PDF o imagen)
-                <DropzoneFile @change="onEditFileChange" />
+                <DropzoneFile :existing="existingComprobantes" @change="onEditFileChange" />
               </label>
               <label class="full">
                 Observaciones
@@ -1052,6 +1194,57 @@ button.danger:hover {
   color: hsla(160, 100%, 30%, 1);
 }
 
+.fields .restante {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #e5484d;
+}
+
+.fields .full {
+  grid-column: 1 / -1;
+}
+
+/* Resumen a todo el ancho: etiqueta a un extremo, valor al otro extremo */
+.fields.resumen {
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+
+.fields.resumen > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.fields.resumen dt {
+  font-size: 0.82rem;
+  color: var(--color-text-2);
+}
+
+.fields.resumen dd {
+  margin: 0;
+  text-align: right;
+}
+
+.fields.resumen .abonado {
+  color: #0969da;
+}
+
+.fields.resumen .full {
+  display: block;
+}
+
+.fields.resumen .full dd {
+  text-align: left;
+}
+
+.fields.resumen .restante {
+  font-size: inherit;
+  font-weight: inherit;
+  color: #e5484d;
+}
+
 .list {
   list-style: none;
   margin: 0;
@@ -1065,7 +1258,8 @@ button.danger:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: 0.25rem;
@@ -1086,6 +1280,7 @@ button.danger:hover {
   text-align: left;
   cursor: pointer;
   border-radius: 0.25rem;
+  min-width: 0;
 }
 
 .pago-wrap {
@@ -1095,14 +1290,66 @@ button.danger:hover {
   min-width: 0;
 }
 
-.pago-obs {
-  margin: 0.15rem 0 0;
-  font-size: 0.8rem;
+.pago-sep {
   color: var(--color-text-2);
-  font-style: italic;
+}
+
+.pago-desc {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pago-fecha {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--color-text-2);
+}
+
+.pago-adelanto {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: #0969da;
+}
+
+.que-es-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #6e7781;
+  background: #eaeef2;
+  flex-shrink: 0;
+}
+
+.realizar-pago {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid hsla(160, 100%, 37%, 0.5);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: hsla(160, 100%, 30%, 1);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+
+.realizar-pago:hover {
+  background: hsla(160, 100%, 37%, 0.12);
 }
 
 .pago-item:hover {
@@ -1215,6 +1462,9 @@ button.danger:hover {
 }
 
 .ticket-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   color: var(--color-text-2);
   font-size: 0.8rem;
   font-weight: 700;
@@ -1238,6 +1488,28 @@ button.danger:hover {
   color: hsla(160, 100%, 30%, 1);
 }
 
+.ticket-moneda {
+  font-size: 0.7em;
+  font-weight: 700;
+}
+
+.ticket-estado-label {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6e7781;
+}
+
+.ticket-estado-label.deuda {
+  color: #ffab00;
+}
+
+.ticket-monto.deuda {
+  color: #ffab00;
+}
+
 .ticket-adjunto {
   display: flex;
   flex-direction: column;
@@ -1246,6 +1518,9 @@ button.danger:hover {
 }
 
 .ticket-adjunto > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   color: var(--color-text-2);
   font-size: 0.8rem;
   font-weight: 700;

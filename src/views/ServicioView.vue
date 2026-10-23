@@ -19,6 +19,7 @@ import {
 } from '../api/pocketbase'
 import { PERIOCIDAD_LABEL, calcularCuotas, sumarPeriocidad } from '../utils/cuotas'
 import { formatDate } from '../utils/format'
+import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Modal from '../components/Modal.vue'
 
 const router = useRouter()
@@ -29,7 +30,6 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 const showForm = ref(false)
-const showMontos = ref(false)
 
 const form = ref({
   cliente_id: '',
@@ -148,7 +148,7 @@ async function guardar() {
         <button
           class="ghost"
           :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
-          @click="showMontos = !showMontos"
+          @click="toggleMontos"
         >
           <IconEyeOff v-if="showMontos" :size="16" />
           <IconEye v-else :size="16" />
@@ -255,7 +255,7 @@ async function guardar() {
         </div>
         <p v-if="s.descripcion" class="card-desc">{{ s.descripcion }}</p>
         <div class="card-total">
-          {{ showMontos ? `S/ ${Number(s.total || 0).toFixed(2)}` : 'S/ ••••' }}
+          {{ monto(s.total) }}
         </div>
         <div class="card-bottom">
           <span class="badge" :class="s.estado">{{ s.estado }}</span>

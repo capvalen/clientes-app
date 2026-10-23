@@ -3,8 +3,12 @@
 #app {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
   font-weight: normal;
+}
+
+/* El contenido lleva el padding (la topbar va a ancho completo) */
+main {
+  padding: 1rem;
 }
 
 a,
@@ -28,5 +32,9 @@ a,
     gap: 2rem;
     padding: 0 2rem;
     max-width: 1400px;
+  }
+
+  main {
+    padding: 0;
   }
 }

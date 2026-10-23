@@ -73,3 +73,54 @@ export function formatDateTime(value: string | null | undefined): string {
   hh = hh % 12 || 12
   return `${dd}/${mm}/${yyyy} ${hh}:${min} ${ampm}`
 }
+
+const MESES_CORTOS = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+]
+
+/** Formatea fecha y hora como "22 ago 2026 · 7:31 pm" (mes corto en español, am/pm en minúsculas) */
+export function formatFechaHora(value: string | null | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const dd = date.getDate()
+  const mes = MESES_CORTOS[date.getMonth()]
+  const yyyy = date.getFullYear()
+  let hh = date.getHours()
+  const min = String(date.getMinutes()).padStart(2, '0')
+  const ampm = hh >= 12 ? 'pm' : 'am'
+  hh = hh % 12 || 12
+  return `${dd} ${mes} ${yyyy} · ${hh}:${min} ${ampm}`
+}
+
+/**
+ * Normaliza una fecha al formato datetime de PocketBase: `YYYY-MM-DD HH:mm:ss.SSSZ`.
+ * Acepta un `Date`, un `datetime` o una fecha suelta `YYYY-MM-DD` (se asume 00:00 UTC).
+ */
+export function pbDateTime(value: Date | string = new Date()): string {
+  let d: Date
+  if (value instanceof Date) {
+    d = value
+  } else if (value.length <= 10) {
+    d = new Date(`${value}T00:00:00Z`)
+  } else {
+    d = new Date(value)
+  }
+  if (Number.isNaN(d.getTime())) return String(value)
+  const p = (n: number, len = 2) => String(n).padStart(len, '0')
+  return (
+    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
+    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(d.getUTCMilliseconds(), 3)}Z`
+  )
+}

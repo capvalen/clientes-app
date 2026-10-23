@@ -1,49 +1,106 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { IconUsers, IconFolder, IconTools, IconLogout } from '@tabler/icons-vue'
+import {
+  IconUsers,
+  IconFolder,
+  IconTools,
+  IconLogout,
+  IconMenu2,
+  IconX,
+} from '@tabler/icons-vue'
 import { isAuthenticated, clearToken } from './api/pocketbase'
 
 const route = useRoute()
 const router = useRouter()
 
 const authed = ref(isAuthenticated())
+const menuOpen = ref(false)
 
 watch(
   () => route.fullPath,
   () => {
     authed.value = isAuthenticated()
+    // Cerrar el offcanvas al navegar
+    menuOpen.value = false
   },
 )
+
+// Bloquear el scroll del body mientras el offcanvas está abierto
+watch(menuOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
 
 function logout() {
   clearToken()
   authed.value = false
+  menuOpen.value = false
   router.push('/login')
 }
 </script>
 
 <template>
   <template v-if="route.name !== 'login'">
-    <!-- Barra superior horizontal -->
+    <!-- Barra superior horizontal (100% del ancho) -->
     <nav class="topbar">
       <div class="brand">
         <img src="/infocat_transparente.png" alt="Infocat" class="brand-logo" />
         <strong>Gestión de Clientes - Infocat</strong>
       </div>
-      <button v-if="authed" class="logout" @click="logout">
+
+      <!-- Hamburguesa (solo móvil/tablet) -->
+      <button
+        class="burger"
+        type="button"
+        aria-label="Abrir menú"
+        :aria-expanded="menuOpen"
+        @click="menuOpen = true"
+      >
+        <IconMenu2 :size="24" />
+      </button>
+
+      <button v-if="authed" class="logout topbar-logout" @click="logout">
         <IconLogout :size="16" /> Salir
       </button>
     </nav>
 
-    <!-- Menú vertical (sidebar) -->
-    <header>
+    <!-- Menú vertical (sidebar en escritorio) -->
+    <header class="sidebar">
       <nav class="menu">
         <RouterLink to="/cliente"><IconUsers :size="16" /> Clientes</RouterLink>
         <RouterLink to="/proyecto"><IconFolder :size="16" /> Proyectos</RouterLink>
         <RouterLink to="/servicio"><IconTools :size="16" /> Servicios</RouterLink>
       </nav>
     </header>
+
+    <!-- Offcanvas (móvil/tablet) -->
+    <Transition name="fade">
+      <div v-if="menuOpen" class="offcanvas-backdrop" @click="menuOpen = false"></div>
+    </Transition>
+
+    <Transition name="slide">
+      <aside v-if="menuOpen" class="offcanvas" role="dialog" aria-label="Menú">
+        <div class="offcanvas-head">
+          <div class="brand">
+            <img src="/infocat_transparente.png" alt="Infocat" class="brand-logo" />
+            <strong>Infocat</strong>
+          </div>
+          <button class="close" type="button" aria-label="Cerrar menú" @click="menuOpen = false">
+            <IconX :size="22" />
+          </button>
+        </div>
+
+        <nav class="menu">
+          <RouterLink to="/cliente"><IconUsers :size="18" /> Clientes</RouterLink>
+          <RouterLink to="/proyecto"><IconFolder :size="18" /> Proyectos</RouterLink>
+          <RouterLink to="/servicio"><IconTools :size="18" /> Servicios</RouterLink>
+        </nav>
+
+        <button v-if="authed" class="logout" @click="logout">
+          <IconLogout :size="18" /> Salir
+        </button>
+      </aside>
+    </Transition>
   </template>
 
   <RouterView />
@@ -55,7 +112,8 @@ function logout() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
+  width: 100%;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--color-border);
   background: #ffffff;
@@ -68,11 +126,37 @@ function logout() {
   gap: 0.5rem;
   font-size: 1.05rem;
   color: var(--color-text);
+  min-width: 0;
+}
+
+.brand strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-logo {
   height: 28px;
   width: auto;
+  flex-shrink: 0;
+}
+
+/* Hamburguesa: visible solo en móvil/tablet */
+.burger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.burger:hover {
+  background-color: var(--color-background-mute);
 }
 
 .logout {
@@ -92,8 +176,14 @@ function logout() {
   background-color: rgba(229, 72, 77, 0.1);
 }
 
-/* Menú vertical (sidebar) */
-header {
+/* En móvil el logout vive dentro del offcanvas */
+.topbar-logout {
+  display: none;
+}
+
+/* Menú vertical: oculto en móvil, sidebar en escritorio */
+.sidebar {
+  display: none;
   line-height: 1.5;
 }
 
@@ -126,13 +216,107 @@ header {
   font-weight: 600;
 }
 
+/* ---- Offcanvas (móvil/tablet) ---- */
+.offcanvas-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 40;
+}
+
+.offcanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(290px, 84vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #ffffff;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.15);
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.offcanvas-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.offcanvas .menu {
+  padding: 0.5rem 0;
+}
+
+.offcanvas .menu a {
+  padding: 0.75rem;
+  font-size: 15px;
+}
+
+.offcanvas .logout {
+  margin-top: auto;
+  justify-content: center;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.close:hover {
+  background-color: var(--color-background-mute);
+}
+
+/* Transiciones */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.25s ease;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(-100%);
+}
+
 @media (min-width: 1024px) {
   .topbar {
     grid-column: 1 / -1;
     padding: 0.75rem 1.5rem;
   }
 
-  header {
+  .burger {
+    display: none;
+  }
+
+  .topbar-logout {
+    display: inline-flex;
+  }
+
+  .sidebar {
+    display: block;
     position: sticky;
     top: 0;
     height: calc(100vh - 57px);
@@ -142,6 +326,12 @@ header {
 
   .menu {
     padding: 0 1rem;
+  }
+
+  /* El offcanvas no aplica en escritorio */
+  .offcanvas,
+  .offcanvas-backdrop {
+    display: none;
   }
 }
 </style>

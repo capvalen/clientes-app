@@ -38,6 +38,7 @@ import {
 } from '../api/pocketbase'
 import { truncate } from '../utils/format'
 import { PERIOCIDAD_LABEL, calcularCuotas, sumarPeriocidad } from '../utils/cuotas'
+import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Modal from '../components/Modal.vue'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 
@@ -51,7 +52,30 @@ const error = ref('')
 const saving = ref(false)
 
 type Tab = 'socios' | 'notas' | 'proyectos' | 'servicios'
-const tab = ref<Tab>('socios')
+const TABS: Tab[] = ['socios', 'notas', 'proyectos', 'servicios']
+
+function tabFromQuery(value: unknown): Tab {
+  const v = Array.isArray(value) ? value[0] : value
+  return TABS.includes(v as Tab) ? (v as Tab) : 'socios'
+}
+
+const tab = ref<Tab>(tabFromQuery(route.query.tab))
+
+// Mantener la pestaña activa en la URL (permite enlazar a una pestaña concreta)
+watch(tab, (t) => {
+  if (route.query.tab !== t) {
+    router.replace({ query: { ...route.query, tab: t } })
+  }
+})
+
+// Si la URL cambia (ej. desde un enlace externo), sincronizar la pestaña
+watch(
+  () => route.query.tab,
+  (value) => {
+    const t = tabFromQuery(value)
+    if (t !== tab.value) tab.value = t
+  },
+)
 
 const socios = computed<Socio[]>(() => parseSocios(cliente.value?.socios))
 const notas = computed<Nota[]>(() => parseNotas(cliente.value?.notas))
@@ -59,7 +83,6 @@ const notas = computed<Nota[]>(() => parseNotas(cliente.value?.notas))
 // Proyectos del cliente
 const proyectos = ref<Proyecto[]>([])
 const showProyectoForm = ref(false)
-const showMontos = ref(false)
 const proyectoForm = ref({
   proyecto: '',
   descripcion: '',
@@ -749,7 +772,7 @@ async function removeNota(index: number) {
           <button
             class="ghost"
             :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
-            @click="showMontos = !showMontos"
+            @click="toggleMontos"
           >
             <IconEyeOff v-if="showMontos" :size="16" />
             <IconEye v-else :size="16" />
@@ -899,7 +922,7 @@ async function removeNota(index: number) {
             <p v-if="p.descripcion" class="proy-desc">{{ truncate(p.descripcion) }}</p>
 
             <div class="proy-total">
-              {{ showMontos ? `S/ ${Number(p.total || 0).toFixed(2)}` : 'S/ ••••' }}
+              {{ monto(p.total) }}
             </div>
 
             <div class="proy-progress">
@@ -910,7 +933,11 @@ async function removeNota(index: number) {
             </div>
 
             <div class="proy-bottom">
-              <span class="badge" :style="{ color: estadoInfo(p.estado).color, background: `${estadoInfo(p.estado).color}1f` }">
+              <span
+                v-if="p.estado !== 'activo'"
+                class="badge"
+                :style="{ color: estadoInfo(p.estado).color, background: `${estadoInfo(p.estado).color}1f` }"
+              >
                 <IconCheck v-if="p.estado === 'completado'" :size="14" />
                 <IconX v-else-if="p.estado === 'cancelado'" :size="14" />
                 <IconFolder v-else :size="14" />
@@ -918,7 +945,7 @@ async function removeNota(index: number) {
               </span>
               <span class="proy-adelanto">
                 Adelantos:
-                {{ showMontos ? `S/ ${totalAdelantos(p).toFixed(2)}` : 'S/ ••••' }}
+                {{ monto(totalAdelantos(p)) }}
               </span>
             </div>
           </RouterLink>
@@ -1008,7 +1035,7 @@ async function removeNota(index: number) {
             <p v-if="s.descripcion" class="proy-desc">{{ truncate(s.descripcion) }}</p>
 
             <div class="proy-total">
-              {{ showMontos ? `S/ ${Number(s.total || 0).toFixed(2)}` : 'S/ ••••' }}
+              {{ monto(s.total) }}
             </div>
 
             <div class="proy-bottom">
@@ -1267,7 +1294,8 @@ async function removeNota(index: number) {
 
 .proy-adelanto {
   font-size: 0.85rem;
-  color: var(--color-text-2);
+  color: #6e7781;
+  margin-left: auto;
 }
 
 .fields {

@@ -7,12 +7,13 @@ import {
   createProyecto,
   createPago,
   listClientes,
-  METODOS_PAGO,
   type Cliente,
   type Proyecto,
 } from '../api/pocketbase'
 import { truncate } from '../utils/format'
+import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Modal from '../components/Modal.vue'
+import MetodoPagoPicker from '../components/MetodoPagoPicker.vue'
 
 const proyectos = ref<Proyecto[]>([])
 const clientes = ref<Cliente[]>([])
@@ -20,7 +21,6 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 const showForm = ref(false)
-const showMontos = ref(false)
 
 const form = ref({
   cliente_id: '',
@@ -40,7 +40,7 @@ const pagoForm = ref({
   metodo_pago: 'Efectivo',
   observaciones: '',
 })
-const comprobante = ref<File | null>(null)
+const comprobante = ref<File[]>([])
 
 const clienteNombre = computed(() => {
   const map = new Map(clientes.value.map((c) => [c.id, c.nombre]))
@@ -81,13 +81,13 @@ function openForm() {
     metodo_pago: 'Efectivo',
     observaciones: '',
   }
-  comprobante.value = null
+  comprobante.value = []
   showForm.value = true
 }
 
 function onFile(e: Event) {
   const input = e.target as HTMLInputElement
-  comprobante.value = input.files?.[0] ?? null
+  comprobante.value = Array.from(input.files ?? [])
 }
 
 async function guardar() {
@@ -109,9 +109,12 @@ async function guardar() {
     })
 
     // 2. Crear el pago inicial (pendiente) vinculado al proyecto
+    const montoInicial = Number(pagoForm.value.monto) || Number(form.value.adelanto) || 0
     await createPago(
       {
-        monto: Number(pagoForm.value.monto) || Number(form.value.adelanto) || 0,
+        monto: montoInicial,
+        adelanto: montoInicial,
+        que_es: 'pago',
         fecha: pagoForm.value.fecha,
         estado: 'pendiente',
         metodo_pago: pagoForm.value.metodo_pago,
@@ -140,7 +143,7 @@ async function guardar() {
         <button
           class="ghost"
           :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
-          @click="showMontos = !showMontos"
+          @click="toggleMontos"
         >
           <IconEyeOff v-if="showMontos" :size="16" />
           <IconEye v-else :size="16" />
@@ -207,15 +210,13 @@ async function guardar() {
             Estado
             <input :value="'Pendiente'" type="text" disabled />
           </label>
-          <label>
+          <label class="full">
             Método de pago
-            <select v-model="pagoForm.metodo_pago">
-              <option v-for="m in METODOS_PAGO" :key="m" :value="m">{{ m }}</option>
-            </select>
+            <MetodoPagoPicker v-model="pagoForm.metodo_pago" />
           </label>
           <label class="full">
             Comprobante (PDF o imagen)
-            <input type="file" accept=".pdf,image/*" @change="onFile" />
+            <input type="file" accept=".pdf,image/*" multiple @change="onFile" />
           </label>
           <label class="full">
             Observaciones
@@ -255,7 +256,7 @@ async function guardar() {
         </div>
         <p v-if="p.descripcion" class="card-desc">{{ truncate(p.descripcion) }}</p>
         <div class="card-total">
-          {{ showMontos ? `S/ ${Number(p.total || 0).toFixed(2)}` : 'S/ ••••' }}
+          {{ monto(p.total) }}
         </div>
         <div class="card-bottom">
           <span class="badge" :class="p.estado">{{ p.estado }}</span>

@@ -71,15 +71,30 @@ export type EntidadTipo = 'proyecto' | 'servicio'
 
 export type EstadoPago = 'pendiente' | 'pagado' | 'anulado'
 
-export const METODOS_PAGO = ['Efectivo', 'Yape', 'Plin', 'BCP', 'Caja Huancayo'] as const
+/** Distingue un pago completo de una deuda (monto por cobrar) */
+export type QueEs = 'pago' | 'deuda'
+
+export const METODOS_PAGO = [
+  'Efectivo',
+  'Yape',
+  'Plin',
+  'BCP',
+  'Interbank',
+  'Caja Huancayo',
+] as const
 
 export interface Pago {
   id: string
   monto: number
+  /** Monto ya abonado de una deuda (0 mientras no se abone nada) */
+  adelanto: number
+  /** Indica si el registro es un pago o una deuda pendiente */
+  que_es: QueEs
   fecha: string
   estado: EstadoPago
   metodo_pago: string
-  comprobante: string
+  /** Nombre(s) del/de los archivo(s) adjunto(s) (campo múltiple de PocketBase) */
+  comprobante: string | string[]
   observaciones: string
   entidad_id: string
   entidad_tipo: EntidadTipo
@@ -275,16 +290,23 @@ export async function listPagosPorEntidad(
   return data.items
 }
 
-/** Crea un pago; si hay comprobante (PDF/imagen) se sube como archivo */
+/** Normaliza el parámetro de comprobantes a un array de File */
+function toFileArray(value?: File[] | File | null): File[] {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+/** Crea un pago; los comprobantes (PDF/imagen) se suben como archivos (permite varios) */
 export async function createPago(
   data: Partial<Pago>,
-  comprobante?: File | null,
+  comprobantes?: File[] | File | null,
 ): Promise<Pago> {
   const form = new FormData()
   Object.entries(data).forEach(([key, value]) => {
+    if (key === 'comprobante') return // los archivos se adjuntan aparte
     if (value != null && value !== '') form.append(key, String(value))
   })
-  if (comprobante) form.append('comprobante', comprobante)
+  toFileArray(comprobantes).forEach((f) => form.append('comprobante', f))
 
   const headers: Record<string, string> = {}
   const token = getToken()
@@ -302,24 +324,53 @@ export async function createPago(
   return res.json()
 }
 
-/** Construye la URL del comprobante adjunto de un pago (o null si no tiene) */
-export function getComprobanteUrl(pago: Pago): string | null {
-  if (!pago.comprobante) return null
-  // PocketBase acepta el nombre de la colección en la URL de archivos
-  return `${BASE_URL}/api/files/is_pagos/${pago.id}/${pago.comprobante}`
+/** Normaliza el campo comprobante a un array de nombres de archivo */
+export function getComprobantes(pago: Pago): string[] {
+  const value: unknown = pago.comprobante
+  if (!value) return []
+  if (Array.isArray(value)) return value.filter(Boolean).map(String)
+  // PocketBase puede devolver varios archivos como string separado por comas
+  return String(value)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
 }
 
-/** Actualiza un pago; si hay comprobante nuevo (PDF/imagen) se sube como archivo */
+/** Lista de comprobantes adjuntos de un pago (nombre + URL) */
+export function getComprobanteFiles(pago: Pago): { name: string; url: string }[] {
+  // PocketBase acepta el nombre de la colección en la URL de archivos
+  return getComprobantes(pago).map((name) => ({
+    name,
+    url: `${BASE_URL}/api/files/is_pagos/${pago.id}/${name}`,
+  }))
+}
+
+/** URL del primer comprobante adjunto de un pago (o null si no tiene) */
+export function getComprobanteUrl(pago: Pago): string | null {
+  return getComprobanteFiles(pago)[0]?.url ?? null
+}
+
+/**
+ * Actualiza un pago; los comprobantes nuevos (PDF/imagen) se suben como archivos.
+ * Con `appendComprobantes: true` se AÑADEN a los existentes (prefijo "+" de PocketBase)
+ * en lugar de reemplazarlos.
+ */
 export async function updatePago(
   id: string,
   data: Partial<Pago>,
-  comprobante?: File | null,
+  comprobantes?: File[] | File | null,
+  options: { appendComprobantes?: boolean } = {},
 ): Promise<Pago> {
   const form = new FormData()
   Object.entries(data).forEach(([key, value]) => {
+    if (key === 'comprobante') return // los archivos se adjuntan aparte
     if (value != null && value !== '') form.append(key, String(value))
   })
-  if (comprobante) form.append('comprobante', comprobante)
+  const files = toFileArray(comprobantes)
+  if (files.length > 0) {
+    const key = options.appendComprobantes ? '+comprobante' : 'comprobante'
+    files.forEach((f) => form.append(key, f))
+  }
 
   const headers: Record<string, string> = {}
   const token = getToken()
@@ -402,6 +453,8 @@ export async function crearPagosPendientes(
   for (const fecha of fechas) {
     await createPago({
       monto,
+      adelanto: 0,
+      que_es: 'deuda',
       fecha,
       estado: 'pendiente',
       metodo_pago: 'Efectivo',
