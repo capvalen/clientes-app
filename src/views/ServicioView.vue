@@ -187,6 +187,7 @@ async function guardar() {
               <option value="diario">Diario</option>
               <option value="semanal">Semanal</option>
               <option value="mensual">Mensual</option>
+              <option value="bianual">Bianual</option>
               <option value="anual">Anual</option>
             </select>
           </label>
@@ -368,7 +369,7 @@ button.ghost {
   padding: 1rem 1.25rem;
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
-  background: var(--color-background-soft);
+  background: #ffffff;
   color: var(--color-text);
   text-decoration: none;
   transition: box-shadow 0.15s, border-color 0.15s;
@@ -382,6 +383,7 @@ button.ghost {
 .card-name {
   font-size: 1rem;
   font-weight: 700;
+  color: hsla(160, 100%, 30%, 1);
 }
 
 .card-desc {
@@ -393,7 +395,7 @@ button.ghost {
 .card-total {
   font-size: 1.5rem;
   font-weight: 700;
-  color: hsla(160, 100%, 30%, 1);
+  color: hsl(160, 3.8%, 31%);
 }
 
 .card-bottom {

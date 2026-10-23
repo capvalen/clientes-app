@@ -46,6 +46,16 @@ const router = createRouter({
       name: 'servicio-detalle',
       component: () => import('../views/ServicioDetalleView.vue'),
     },
+    {
+      path: '/cobro',
+      name: 'cobro',
+      component: () => import('../views/CobroView.vue'),
+    },
+    {
+      path: '/opciones',
+      name: 'opciones',
+      component: () => import('../views/OpcionesView.vue'),
+    },
   ],
 })
 

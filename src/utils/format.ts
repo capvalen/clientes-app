@@ -48,9 +48,26 @@ export function truncate(text: string, max = 30): string {
   return t.slice(0, max).trimEnd() + '...'
 }
 
+/**
+ * Extrae año, mes y día de la parte de FECHA (UTC) de un valor de PocketBase.
+ * Evita el desfase por zona horaria al mostrar fechas guardadas como
+ * medianoche UTC (`YYYY-MM-DD 00:00:00.000Z`).
+ */
+function pbDateParts(value: string): { y: number; m: number; d: number } | null {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return null
+  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) }
+}
+
 /** Formatea una fecha (ISO o "YYYY-MM-DD") a dd/MM/YYYY */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '—'
+  const parts = pbDateParts(value)
+  if (parts) {
+    const dd = String(parts.d).padStart(2, '0')
+    const mm = String(parts.m).padStart(2, '0')
+    return `${dd}/${mm}/${parts.y}`
+  }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   const dd = String(date.getDate()).padStart(2, '0')
@@ -102,6 +119,21 @@ export function formatFechaHora(value: string | null | undefined): string {
   const ampm = hh >= 12 ? 'pm' : 'am'
   hh = hh % 12 || 12
   return `${dd} ${mes} ${yyyy} · ${hh}:${min} ${ampm}`
+}
+
+/** Formatea solo la fecha como "6 ago. 2026" (día sin cero, mes corto en español con punto) */
+export function formatFechaCorta(value: string | null | undefined): string {
+  if (!value) return '—'
+  const parts = pbDateParts(value)
+  if (parts) {
+    return `${parts.d} ${MESES_CORTOS[parts.m - 1]}. ${parts.y}`
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const dd = date.getDate()
+  const mes = MESES_CORTOS[date.getMonth()]
+  const yyyy = date.getFullYear()
+  return `${dd} ${mes}. ${yyyy}`
 }
 
 /**

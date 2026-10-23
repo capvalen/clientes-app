@@ -41,7 +41,7 @@ import {
   type Pago,
   type Cliente,
 } from '../api/pocketbase'
-import { capitalize, formatDate, formatDateTime, formatFechaHora, pbDateTime, upperFirst } from '../utils/format'
+import { capitalize, formatDate, formatFechaCorta, pbDateTime, upperFirst } from '../utils/format'
 import { sumarPeriocidad, PERIOCIDAD_LABEL } from '../utils/cuotas'
 import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
@@ -93,8 +93,9 @@ function startEdit() {
     periocidad: servicio.value.periocidad ?? 'mensual',
     duracion_dias: String(servicio.value.duracion_dias ?? 0),
     estado: servicio.value.estado ?? 'activo',
-    fecha_inicio: servicio.value.fecha_inicio ?? '',
-    fecha_final: servicio.value.fecha_final ?? '',
+    // PocketBase devuelve datetime completo; el input date necesita YYYY-MM-DD
+    fecha_inicio: (servicio.value.fecha_inicio ?? '').slice(0, 10),
+    fecha_final: (servicio.value.fecha_final ?? '').slice(0, 10),
     observaciones: servicio.value.observaciones ?? '',
   }
   editing.value = true
@@ -112,8 +113,8 @@ async function saveEdit() {
       periocidad: editForm.value.periocidad as Servicio['periocidad'],
       duracion_dias: Number(editForm.value.duracion_dias) || 0,
       estado: editForm.value.estado as Servicio['estado'],
-      fecha_inicio: editForm.value.fecha_inicio,
-      fecha_final: editForm.value.fecha_final,
+      fecha_inicio: editForm.value.fecha_inicio ? pbDateTime(editForm.value.fecha_inicio) : '',
+      fecha_final: editForm.value.fecha_final ? pbDateTime(editForm.value.fecha_final) : '',
       observaciones: editForm.value.observaciones,
     })
     editing.value = false
@@ -273,6 +274,12 @@ function cronogramaClienteNombre(id: string) {
   return cronogramaClientes.value.get(id)?.nombre ?? '—'
 }
 
+/** Sumatoria de los montos pendientes de un servicio del cronograma */
+function cronogramaTotal(id: string): number {
+  const lista = cronogramaPagos.value.get(id) ?? []
+  return lista.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
+}
+
 async function capturarCronograma() {
   const el = cronogramaTicketRef.value
   if (!el) return
@@ -283,9 +290,23 @@ async function capturarCronograma() {
       scale: 2,
       useCORS: true,
     })
+
+    // Crear canvas con padding: +30px en X, +20px en Y, contenido desplazado 15px derecha y 10px abajo
+    const offsetX = 15 * 2
+    const offsetY = 10 * 2
+    const newWidth = canvas.width + 30 * 2
+    const newHeight = canvas.height + 20 * 2
+    const resultCanvas = document.createElement('canvas')
+    resultCanvas.width = newWidth
+    resultCanvas.height = newHeight
+    const ctx = resultCanvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, newWidth, newHeight)
+    ctx.drawImage(canvas, offsetX, offsetY)
+
     const link = document.createElement('a')
     link.download = `cronograma-deudas-${new Date().toISOString().slice(0, 10)}.png`
-    link.href = canvas.toDataURL('image/png')
+    link.href = resultCanvas.toDataURL('image/png')
     link.click()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al capturar el cronograma'
@@ -298,6 +319,7 @@ async function capturarCronograma() {
 const editingPago = ref<Pago | null>(null)
 const pagoEditForm = ref({
   monto: '',
+  fecha: '',
   metodo_pago: 'Efectivo',
   observaciones: '',
 })
@@ -366,6 +388,7 @@ async function guardarRealizarPago() {
 function openPagoEdit(pago: Pago) {
   pagoEditForm.value = {
     monto: String(pago.monto ?? ''),
+    fecha: (pago.fecha ?? '').slice(0, 10),
     metodo_pago: pago.metodo_pago || 'Efectivo',
     observaciones: pago.observaciones ?? '',
   }
@@ -380,6 +403,7 @@ async function savePagoEdit() {
   error.value = ''
   try {
     const data: Partial<Pago> = {
+      fecha: pagoEditForm.value.fecha ? pbDateTime(pagoEditForm.value.fecha) : pagoEditForm.value.fecha,
       metodo_pago: pagoEditForm.value.metodo_pago,
       observaciones: pagoEditForm.value.observaciones,
     }
@@ -471,13 +495,26 @@ async function capturarTicket() {
       useCORS: true,
     })
 
+    // Crear canvas con padding: +30px en X, +20px en Y, contenido desplazado 15px derecha y 10px abajo
+    const offsetX = 15 * 2  // scale factor
+    const offsetY = 10 * 2
+    const newWidth = canvas.width + 30 * 2
+    const newHeight = canvas.height + 20 * 2
+    const resultCanvas = document.createElement('canvas')
+    resultCanvas.width = newWidth
+    resultCanvas.height = newHeight
+    const ctx = resultCanvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, newWidth, newHeight)
+    ctx.drawImage(canvas, offsetX, offsetY)
+
     originals.forEach(({ img, src }) => {
       img.src = src
     })
 
     const link = document.createElement('a')
     link.download = `pago-${selectedPago.value.id}.png`
-    link.href = canvas.toDataURL('image/png')
+    link.href = resultCanvas.toDataURL('image/png')
     link.click()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al capturar el ticket'
@@ -587,7 +624,6 @@ onMounted(load)
         <dl class="fields">
           <div><dt>Total</dt><dd class="total">{{ monto(servicio.total) }}</dd></div>
           <div><dt>Periocidad</dt><dd>{{ PERIOCIDAD_LABEL[servicio.periocidad] }}</dd></div>
-          <div><dt>Duración (días)</dt><dd>{{ servicio.duracion_dias || 0 }}</dd></div>
           <div><dt>Estado</dt><dd>{{ capitalize(servicio.estado) }}</dd></div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(servicio.fecha_inicio) }}</dd></div>
           <div><dt>Fecha final</dt><dd>{{ formatDate(servicio.fecha_final) }}</dd></div>
@@ -617,6 +653,7 @@ onMounted(load)
                 <option value="diario">Diario</option>
                 <option value="semanal">Semanal</option>
                 <option value="mensual">Mensual</option>
+                <option value="bianual">Bianual</option>
                 <option value="anual">Anual</option>
               </select>
             </label>
@@ -666,7 +703,7 @@ onMounted(load)
       <!-- Pagos -->
       <section class="card">
         <div class="tab-head">
-          <h2><IconWallet :size="18" /> Pagos</h2>
+          <h2><IconWallet :size="18" /> Cuotas</h2>
           <div class="tab-actions">
             <button class="ghost" @click="openDeudaForm">
               <IconPlus :size="16" /> Agregar deuda
@@ -774,7 +811,7 @@ onMounted(load)
               </button>
               <span class="pago-fecha">
                 <IconCalendar :size="13" />
-                {{ formatFechaHora(pago.fecha) }}
+                {{ formatFechaCorta(pago.fecha) }}
               </span>
               <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
                 Adelanto: {{ monto(pago.adelanto) }}
@@ -877,7 +914,7 @@ onMounted(load)
                 <strong>{{ cliente?.nombre || '—' }}</strong>
               </div>
               <div v-if="selectedPago.observaciones" class="ticket-row">
-                <span><IconNotes :size="14" /> Detalles</span>
+                <span><IconNotes :size="14" /> Detalle</span>
                 <strong class="pre">{{ selectedPago.observaciones }}</strong>
               </div>
 
@@ -894,7 +931,7 @@ onMounted(load)
 
               <div class="ticket-row">
                 <span><IconCalendar :size="14" /> Fecha</span>
-                <strong>{{ formatDateTime(selectedPago.fecha) }}</strong>
+                <strong>{{ formatFechaCorta(selectedPago.fecha) }}</strong>
               </div>
               <div v-if="selectedPago.estado !== 'pendiente'" class="ticket-row">
                 <span><IconWallet :size="14" /> Método de pago</span>
@@ -954,6 +991,10 @@ onMounted(load)
                 Monto (S/) *
                 <input v-model="pagoEditForm.monto" type="number" min="0" step="0.01" required />
               </label>
+              <label>
+                Fecha
+                <input v-model="pagoEditForm.fecha" type="date" />
+              </label>
               <label class="full">
                 Método de pago
                 <MetodoPagoPicker v-model="pagoEditForm.metodo_pago" />
@@ -986,14 +1027,14 @@ onMounted(load)
         <Modal
           v-if="showCronograma"
           title="Cronograma de deudas pendientes"
+          size="sm"
           @close="showCronograma = false"
         >
           <div ref="cronogramaTicketRef" class="ticket-capture">
             <div class="ticket">
               <div class="ticket-head">
                 <img src="/infocat_transparente.png" alt="Infocat" class="ticket-logo" />
-                <strong>Gestión de Clientes - Infocat</strong>
-                <span>Cronograma de deudas pendientes</span>
+                <strong>Cronograma de deudas pendientes</strong>
               </div>
 
               <div class="ticket-sep"></div>
@@ -1012,6 +1053,8 @@ onMounted(load)
                   <strong>{{ cronogramaClienteNombre(s.cliente_id) }}</strong>
                 </div>
 
+                <p class="cronograma-titulo">Cronograma de fechas</p>
+
                 <div class="cronograma-encabezado">
                   <strong>Fecha</strong>
                   <strong>Monto</strong>
@@ -1019,9 +1062,14 @@ onMounted(load)
 
                 <div class="cronograma-pagos">
                   <div v-for="p in cronogramaPagos.get(s.id)" :key="p.id" class="cronograma-pago">
-                    <span class="cronograma-fecha">{{ formatDate(p.fecha) }}</span>
-                    <span class="cronograma-monto">S/ {{ Number(p.monto || 0).toFixed(2) }}</span>
+                    <span class="cronograma-fecha">{{ formatFechaCorta(p.fecha) }}</span>
+                    <span class="cronograma-monto">{{ monto(p.monto) }}</span>
                   </div>
+                </div>
+
+                <div class="cronograma-total">
+                  <strong>Total</strong>
+                  <strong>{{ monto(cronogramaTotal(s.id)) }}</strong>
                 </div>
 
                 <div class="ticket-sep"></div>
@@ -1415,13 +1463,13 @@ button.danger:hover {
 .ticket-capture {
   border: 2px dashed var(--color-border);
   border-radius: 0.75rem;
-  padding: 1.25rem;
   background: #ffffff;
 }
 
 .ticket {
   font-size: 0.9rem;
   color: var(--color-text);
+  padding: 20px;
 }
 
 .ticket-head {
@@ -1600,6 +1648,15 @@ button.danger:hover {
   margin: 0.5rem 0 0;
 }
 
+.cronograma-titulo {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .cronograma-encabezado {
   display: flex;
   align-items: center;
@@ -1631,6 +1688,23 @@ button.danger:hover {
 
 .cronograma-monto {
   font-weight: 600;
+  color: hsla(160, 100%, 30%, 1);
+}
+
+.cronograma-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  border-top: 2px solid var(--color-border);
+  font-size: 0.9rem;
+}
+
+.cronograma-total strong {
+  font-weight: 700;
+}
+
+.cronograma-total strong:last-child {
   color: hsla(160, 100%, 30%, 1);
 }
 </style>

@@ -1,18 +1,25 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   IconUsers,
   IconFolder,
   IconTools,
+  IconCash,
+  IconSettings,
+  IconDeviceDesktop,
   IconLogout,
   IconMenu2,
   IconX,
 } from '@tabler/icons-vue'
-import { isAuthenticated, clearToken } from './api/pocketbase'
+import { isAuthenticated, clearToken, ensureSession } from './api/pocketbase'
+import Toasts from './components/Toasts.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+/** Versión de la app (inyectada desde package.json en build) */
+const version = __APP_VERSION__
 
 const authed = ref(isAuthenticated())
 const menuOpen = ref(false)
@@ -31,6 +38,29 @@ watch(menuOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
+// La sesión dejó de ser válida (token expirado y sin poder refrescar)
+function onAuthExpired() {
+  authed.value = false
+  menuOpen.value = false
+  router.push({ name: 'login', query: { redirect: route.fullPath } })
+}
+
+// Refresco periódico del token mientras la app está abierta
+let refreshTimer: number | undefined
+
+onMounted(() => {
+  // Extiende la sesión al iniciar la app (sesión deslizante)
+  if (authed.value) ensureSession(true)
+  // Revisa/renueva cada 30 minutos para sesiones de larga duración
+  refreshTimer = window.setInterval(() => ensureSession(), 30 * 60 * 1000)
+  window.addEventListener('pb:auth-expired', onAuthExpired)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+  window.removeEventListener('pb:auth-expired', onAuthExpired)
+})
+
 function logout() {
   clearToken()
   authed.value = false
@@ -44,8 +74,8 @@ function logout() {
     <!-- Barra superior horizontal (100% del ancho) -->
     <nav class="topbar">
       <div class="brand">
-        <img src="/infocat_transparente.png" alt="Infocat" class="brand-logo" />
-        <strong>Gestión de Clientes - Infocat</strong>
+        <img src="/infocat_transparente.png" alt="Deal Desk" class="brand-logo" />
+        <strong>Deal Desk - Gestión de Mesa de contratos</strong>
       </div>
 
       <!-- Hamburguesa (solo móvil/tablet) -->
@@ -70,6 +100,8 @@ function logout() {
         <RouterLink to="/cliente"><IconUsers :size="16" /> Clientes</RouterLink>
         <RouterLink to="/proyecto"><IconFolder :size="16" /> Proyectos</RouterLink>
         <RouterLink to="/servicio"><IconTools :size="16" /> Servicios</RouterLink>
+        <RouterLink to="/cobro"><IconCash :size="16" /> Cobros</RouterLink>
+        <RouterLink to="/opciones"><IconSettings :size="16" /> Opciones</RouterLink>
       </nav>
     </header>
 
@@ -82,8 +114,8 @@ function logout() {
       <aside v-if="menuOpen" class="offcanvas" role="dialog" aria-label="Menú">
         <div class="offcanvas-head">
           <div class="brand">
-            <img src="/infocat_transparente.png" alt="Infocat" class="brand-logo" />
-            <strong>Infocat</strong>
+            <img src="/infocat_transparente.png" alt="Deal Desk" class="brand-logo" />
+            <strong>Deal Desk</strong>
           </div>
           <button class="close" type="button" aria-label="Cerrar menú" @click="menuOpen = false">
             <IconX :size="22" />
@@ -94,6 +126,8 @@ function logout() {
           <RouterLink to="/cliente"><IconUsers :size="18" /> Clientes</RouterLink>
           <RouterLink to="/proyecto"><IconFolder :size="18" /> Proyectos</RouterLink>
           <RouterLink to="/servicio"><IconTools :size="18" /> Servicios</RouterLink>
+          <RouterLink to="/cobro"><IconCash :size="18" /> Cobros</RouterLink>
+          <RouterLink to="/opciones"><IconSettings :size="18" /> Opciones</RouterLink>
         </nav>
 
         <button v-if="authed" class="logout" @click="logout">
@@ -104,9 +138,57 @@ function logout() {
   </template>
 
   <RouterView />
+
+  <footer v-if="route.name !== 'login'" class="app-footer">
+    <span class="footer-item">
+      <IconDeviceDesktop :size="16" /> v{{ version }}
+    </span>
+    <span class="footer-item">
+      Desarrollado por:
+      <a href="https://infocatsoluciones.com" target="_blank" rel="noopener">
+        Infocat Soluciones
+      </a>
+    </span>
+  </footer>
+
+  <Toasts />
 </template>
 
 <style scoped>
+/* Pie de página con la versión y el crédito */
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.app-footer a {
+  color: hsla(160, 100%, 30%, 1);
+  font-weight: 600;
+  text-decoration: none;
+  padding: 0;
+  transition: none;
+}
+
+.app-footer a:hover {
+  background-color: transparent;
+  text-decoration: underline;
+}
+
 /* Barra superior horizontal */
 .topbar {
   display: flex;
@@ -332,6 +414,10 @@ function logout() {
   .offcanvas,
   .offcanvas-backdrop {
     display: none;
+  }
+
+  .app-footer {
+    grid-column: 1 / -1;
   }
 }
 </style>

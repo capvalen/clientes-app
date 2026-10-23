@@ -466,13 +466,26 @@ async function capturarTicket() {
       useCORS: true,
     })
 
+    // Crear canvas con padding: +30px en X, +20px en Y, contenido desplazado 15px derecha y 10px abajo
+    const offsetX = 15 * 2  // scale factor
+    const offsetY = 10 * 2
+    const newWidth = canvas.width + 30 * 2
+    const newHeight = canvas.height + 20 * 2
+    const resultCanvas = document.createElement('canvas')
+    resultCanvas.width = newWidth
+    resultCanvas.height = newHeight
+    const ctx = resultCanvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, newWidth, newHeight)
+    ctx.drawImage(canvas, offsetX, offsetY)
+
     originals.forEach(({ img, src }) => {
       img.src = src
     })
 
     const link = document.createElement('a')
     link.download = `pago-${selectedPago.value.id}.png`
-    link.href = canvas.toDataURL('image/png')
+    link.href = resultCanvas.toDataURL('image/png')
     link.click()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al capturar el ticket'
@@ -879,7 +892,7 @@ onMounted(load)
                 <strong>{{ cliente?.nombre || '—' }}</strong>
               </div>
               <div v-if="selectedPago.observaciones" class="ticket-row">
-                <span><IconNotes :size="14" /> Detalles</span>
+                <span><IconNotes :size="14" /> Detalle</span>
                 <strong class="pre">{{ selectedPago.observaciones }}</strong>
               </div>
 
@@ -1417,13 +1430,14 @@ button.danger:hover {
 .ticket-capture {
   border: 2px dashed var(--color-border);
   border-radius: 0.75rem;
-  padding: 1.25rem;
+  margin: 1.25rem;
   background: #ffffff;
 }
 
 .ticket {
   font-size: 0.9rem;
   color: var(--color-text);
+  padding: 20px;
 }
 
 .ticket-head {

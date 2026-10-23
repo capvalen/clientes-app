@@ -334,7 +334,7 @@ button.danger {
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   padding: 1rem 1.25rem;
-  background: var(--color-background-soft);
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -351,6 +351,7 @@ button.danger {
 .card-name {
   font-size: 1.05rem;
   font-weight: 600;
+  color: hsla(160, 100%, 30%, 1);
 }
 
 .card-stats {

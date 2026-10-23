@@ -47,7 +47,7 @@ export interface Proyecto {
   updated: string
 }
 
-export type Periocidad = 'diario' | 'semanal' | 'mensual' | 'anual'
+export type Periocidad = 'diario' | 'semanal' | 'mensual' | 'bianual' | 'anual'
 
 export type EstadoServicio = 'activo' | 'inactivo' | 'suspendido'
 
@@ -115,7 +115,108 @@ export function clearToken() {
 }
 
 export function isAuthenticated(): boolean {
-  return !!getToken()
+  const token = getToken()
+  if (!token) return false
+  // Un token ya expirado no sirve (PocketBase no permite refrescarlo)
+  return !isTokenExpired()
+}
+
+/**
+ * Decodifica el payload de un JWT (sin verificar la firma).
+ * PocketBase devuelve un JWT cuyo claim `exp` indica la expiración en segundos.
+ */
+function decodeJwtPayload(token: string): { exp?: number } | null {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const json = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    )
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+/** Segundos restantes hasta que expire el token (null si no se puede determinar) */
+function tokenSecondsLeft(token: string): number | null {
+  const payload = decodeJwtPayload(token)
+  if (!payload?.exp) return null
+  return payload.exp - Math.floor(Date.now() / 1000)
+}
+
+/** Margen de seguridad: refresca el token si le quedan menos de 5 minutos */
+const REFRESH_MARGIN_SECONDS = 300
+
+/** Refresco en curso (evita refrescos concurrentes en peticiones paralelas) */
+let refreshPromise: Promise<string | null> | null = null
+
+/**
+ * Refresca el token contra `auth-refresh` (extiende la sesión en PocketBase).
+ * Devuelve el nuevo token o null si no fue posible (sesión inválida/expirada).
+ */
+export async function refreshAuth(): Promise<string | null> {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const res = await fetch(`${BASE_URL}/api/collections/users/auth-refresh`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data?.token) {
+      setToken(data.token)
+      return data.token as string
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Lanza (o reutiliza) un refresco de token en curso */
+function refreshTokenOnce(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = refreshAuth().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
+
+/** Asegura un token vigente: refresca si ya expiró o está por expirar */
+async function ensureFreshToken(): Promise<string | null> {
+  const token = getToken()
+  if (!token) return null
+  const left = tokenSecondsLeft(token)
+  // Sin `exp` legible no podemos anticiparnos; se usa tal cual
+  if (left === null || left > REFRESH_MARGIN_SECONDS) return token
+  return refreshTokenOnce()
+}
+
+/**
+ * Renueva la sesión si el token está por expirar.
+ * Útil para llamar al iniciar la app o periódicamente (sesiones de larga duración).
+ * Con `force = true` refresca siempre (sesión deslizante al abrir la app).
+ * Devuelve true si hay una sesión disponible (vigente o renovada).
+ */
+export async function ensureSession(force = false): Promise<boolean> {
+  if (!getToken()) return false
+  const token = force ? await refreshTokenOnce() : await ensureFreshToken()
+  return !!token
+}
+
+/** Indica si el token actual ya expiró (según su claim `exp`) */
+export function isTokenExpired(): boolean {
+  const token = getToken()
+  if (!token) return true
+  const left = tokenSecondsLeft(token)
+  return left !== null && left <= 0
 }
 
 /** Normaliza campos JSON de PocketBase (pueden venir como array o string) */
@@ -131,15 +232,46 @@ function parseJson<T>(value: unknown, fallback: T): T {
   return fallback
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
-  }
-  const token = getToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
+/**
+ * Fetch autenticado contra PocketBase.
+ * - Asegura un token vigente antes de la petición.
+ * - Si la API responde 401 (token expirado/invalidado), refresca y reintenta UNA vez.
+ * - Si tras refrescar sigue sin autorización, cierra la sesión y avisa a la app.
+ */
+async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const token = await ensureFreshToken()
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+  const buildHeaders = (t: string | null) => {
+    const headers = new Headers(options.headers)
+    if (t) headers.set('Authorization', `Bearer ${t}`)
+    return headers
+  }
+
+  let res = await fetch(`${BASE_URL}${path}`, { ...options, headers: buildHeaders(token) })
+
+  if (res.status === 401) {
+    const fresh = await refreshTokenOnce()
+    if (fresh) {
+      res = await fetch(`${BASE_URL}${path}`, { ...options, headers: buildHeaders(fresh) })
+    }
+    // Sigue sin autorización: la sesión ya no es válida
+    if (res.status === 401) {
+      clearToken()
+      window.dispatchEvent(new CustomEvent('pb:auth-expired'))
+    }
+  }
+
+  return res
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await authFetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    },
+  })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(body?.message || `Error ${res.status}`)
@@ -226,8 +358,62 @@ export function parseSocios(value: unknown): Socio[] {
   return parseJson<Socio[]>(value, [])
 }
 
-export function parseNotas(value: unknown): Nota[] {
-  return parseJson<Nota[]>(value, [])
+// ---------- Notas / Secretos (is_notas) ----------
+
+/**
+ * Registro de la colección `is_notas`.
+ * - Nota normal: `dato` = texto plano, `oculto` = false.
+ * - Secreto: `dato` = JSON de un array de textos CIFRADOS, `oculto` = true.
+ */
+export interface NotaRegistro {
+  id: string
+  cliente_id: string
+  titulo: string
+  dato: string
+  dato_extra: string
+  oculto: boolean
+  created: string
+  updated: string
+}
+
+/** Normaliza campos antes de enviarlos a la BD */
+function normalizeNota(data: Partial<NotaRegistro>): Partial<NotaRegistro> {
+  return {
+    ...data,
+    titulo: data.titulo != null ? upperFirst(data.titulo) : data.titulo,
+    oculto: data.oculto != null ? Boolean(data.oculto) : data.oculto,
+  }
+}
+
+/** Lista las notas/secretos de un cliente */
+export async function listNotasPorCliente(clienteId: string): Promise<NotaRegistro[]> {
+  const data = await request<{ items: NotaRegistro[] }>(
+    `/api/collections/is_notas/records?perPage=200&sort=-created&filter=${encodeURIComponent(
+      `cliente_id="${clienteId}"`,
+    )}`,
+  )
+  return data.items
+}
+
+export async function createNota(data: Partial<NotaRegistro>): Promise<NotaRegistro> {
+  return request<NotaRegistro>('/api/collections/is_notas/records', {
+    method: 'POST',
+    body: JSON.stringify(normalizeNota(data)),
+  })
+}
+
+export async function updateNota(
+  id: string,
+  data: Partial<NotaRegistro>,
+): Promise<NotaRegistro> {
+  return request<NotaRegistro>(`/api/collections/is_notas/records/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(normalizeNota(data)),
+  })
+}
+
+export async function deleteNota(id: string): Promise<void> {
+  await request(`/api/collections/is_notas/records/${id}`, { method: 'DELETE' })
 }
 
 // ---------- Proyectos ----------
@@ -290,6 +476,14 @@ export async function listPagosPorEntidad(
   return data.items
 }
 
+/** Lista TODOS los pagos (de proyectos y servicios) */
+export async function listPagos(): Promise<Pago[]> {
+  const data = await request<{ items: Pago[] }>(
+    '/api/collections/is_pagos/records?perPage=500&sort=fecha',
+  )
+  return data.items
+}
+
 /** Normaliza el parámetro de comprobantes a un array de File */
 function toFileArray(value?: File[] | File | null): File[] {
   if (!value) return []
@@ -308,14 +502,9 @@ export async function createPago(
   })
   toFileArray(comprobantes).forEach((f) => form.append('comprobante', f))
 
-  const headers: Record<string, string> = {}
-  const token = getToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  const res = await fetch(`${BASE_URL}/api/collections/is_pagos/records`, {
+  const res = await authFetch('/api/collections/is_pagos/records', {
     method: 'POST',
     body: form,
-    headers,
   })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
@@ -372,14 +561,9 @@ export async function updatePago(
     files.forEach((f) => form.append(key, f))
   }
 
-  const headers: Record<string, string> = {}
-  const token = getToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  const res = await fetch(`${BASE_URL}/api/collections/is_pagos/records/${id}`, {
+  const res = await authFetch(`/api/collections/is_pagos/records/${id}`, {
     method: 'PATCH',
     body: form,
-    headers,
   })
   if (!res.ok) {
     const body = await res.json().catch(() => null)

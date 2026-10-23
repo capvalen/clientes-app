@@ -35,8 +35,8 @@ async function submit() {
         <div class="brand-icon">
           <IconBrush :size="28" />
         </div>
-        <h1>Gestión de Clientes</h1>
-        <p class="subtitle">Infocat Soluciones</p>
+        <h1>Deal Desk</h1>
+        <p class="subtitle">Gestión de clientes</p>
       </div>
 
       <div class="form-group">

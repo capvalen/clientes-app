@@ -3,16 +3,21 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   IconCheck,
+  IconClipboard,
   IconEdit,
   IconEye,
   IconEyeOff,
   IconFolder,
   IconLoader,
+  IconLock,
+  IconLockOpen,
   IconNotebook,
   IconPlus,
   IconTools,
   IconTrash,
+  IconUser,
   IconUsers,
+  IconVault,
   IconX,
 } from '@tabler/icons-vue'
 import {
@@ -28,15 +33,28 @@ import {
   updateServicio,
   deleteServicio,
   crearPagosPendientes,
+  listNotasPorCliente,
+  createNota,
+  updateNota,
+  deleteNota,
   parseSocios,
-  parseNotas,
   type Cliente,
   type Socio,
-  type Nota,
+  type NotaRegistro,
   type Proyecto,
   type Servicio,
 } from '../api/pocketbase'
+import {
+  encryptText,
+  decryptText,
+  getMasterPassword,
+  hasMasterPassword,
+  setMasterPassword,
+  isMasterUnlocked,
+  unlockMaster,
+} from '../utils/crypto'
 import { truncate } from '../utils/format'
+import { showToast } from '../utils/toast'
 import { PERIOCIDAD_LABEL, calcularCuotas, sumarPeriocidad } from '../utils/cuotas'
 import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Modal from '../components/Modal.vue'
@@ -78,7 +96,39 @@ watch(
 )
 
 const socios = computed<Socio[]>(() => parseSocios(cliente.value?.socios))
-const notas = computed<Nota[]>(() => parseNotas(cliente.value?.notas))
+
+// ---------- Notas y secretos (is_notas) ----------
+const notasDb = ref<NotaRegistro[]>([])
+
+/** Notas normales (texto plano) */
+const notasPlanas = computed(() => notasDb.value.filter((n) => !n.oculto))
+/** Secretos (texto cifrado) */
+const secretos = computed(() => notasDb.value.filter((n) => n.oculto))
+
+/** Textos cifrados de un secreto (array JSON) */
+function secretoItems(nota: NotaRegistro): string[] {
+  try {
+    const value = JSON.parse(nota.dato || '[]')
+    return Array.isArray(value) ? value.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+/** Contenido revelado: clave `${notaId}:${index}` -> texto plano */
+const revelados = ref<Record<string, string>>({})
+
+function revealKey(nota: NotaRegistro, index: number): string {
+  return `${nota.id}:${index}`
+}
+
+function estaRevelado(nota: NotaRegistro, index: number): boolean {
+  return revelados.value[revealKey(nota, index)] !== undefined
+}
+
+function textoRevelado(nota: NotaRegistro, index: number): string {
+  return revelados.value[revealKey(nota, index)] ?? ''
+}
 
 // Proyectos del cliente
 const proyectos = ref<Proyecto[]>([])
@@ -218,6 +268,21 @@ const socioForm = ref({ nombre: '', celular: '', cargo: '', ubicacion: '' })
 const showNotaForm = ref(false)
 const notaForm = ref({ titulo: '', dato: '' })
 
+// Formulario de secreto (título + varios textos cifrados)
+const showSecretoForm = ref(false)
+const secretoForm = ref({ titulo: '', textos: [''] })
+/** Indica si falta crear la clave maestra (al abrir el formulario de secreto) */
+const sinClaveMaestra = ref(false)
+
+// Prompt de clave maestra para revelar/editar secretos
+const showKeyPrompt = ref(false)
+const keyInput = ref('')
+const keyError = ref('')
+/** Cipher de referencia para validar la clave ingresada */
+let pendingKeyCheck: string | null = null
+/** Acción a ejecutar una vez validada la clave */
+let pendingKeyAction: (() => void | Promise<void>) | null = null
+
 // Edición de socio
 const editingSocioIndex = ref<number | null>(null)
 const socioEditForm = ref({ nombre: '', celular: '', cargo: '', ubicacion: '' })
@@ -255,10 +320,16 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [cli, proy, serv] = await Promise.all([getCliente(id), listProyectos(), listServicios()])
+    const [cli, proy, serv, nts] = await Promise.all([
+      getCliente(id),
+      listProyectos(),
+      listServicios(),
+      listNotasPorCliente(id),
+    ])
     cliente.value = cli
     proyectos.value = proy.filter((p) => p.cliente_id === id)
     servicios.value = serv.filter((s) => s.cliente_id === id)
+    notasDb.value = nts
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al cargar el cliente'
   } finally {
@@ -511,8 +582,14 @@ async function addNota() {
   saving.value = true
   error.value = ''
   try {
-    const nota: Nota = { ...notaForm.value }
-    cliente.value = await updateCliente(cliente.value.id, { notas: [...notas.value, nota] })
+    const creada = await createNota({
+      cliente_id: cliente.value.id,
+      titulo: notaForm.value.titulo,
+      dato: notaForm.value.dato,
+      dato_extra: '',
+      oculto: false,
+    })
+    notasDb.value = [creada, ...notasDb.value]
     showNotaForm.value = false
     notaForm.value = { titulo: '', dato: '' }
   } catch (e) {
@@ -522,15 +599,272 @@ async function addNota() {
   }
 }
 
-async function removeNota(index: number) {
-  if (!cliente.value) return
+async function borrarNota(nota: NotaRegistro) {
   saving.value = true
   error.value = ''
   try {
-    const next = notas.value.filter((_, i) => i !== index)
-    cliente.value = await updateCliente(cliente.value.id, { notas: next })
+    await deleteNota(nota.id)
+    notasDb.value = notasDb.value.filter((n) => n.id !== nota.id)
+    // Limpia el contenido revelado de esa nota
+    for (const k of Object.keys(revelados.value)) {
+      if (k.startsWith(`${nota.id}:`)) delete revelados.value[k]
+    }
+    showToast('Eliminado', 'success')
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al eliminar nota'
+  } finally {
+    saving.value = false
+  }
+}
+
+/** Elimina una nota normal (texto plano) */
+function eliminarNota(nota: NotaRegistro) {
+  if (!confirm(`¿Eliminar "${nota.titulo}"?`)) return
+  void borrarNota(nota)
+}
+
+/** Elimina un secreto: requiere la clave maestra */
+function eliminarSecreto(secreto: NotaRegistro) {
+  if (!confirm(`¿Eliminar "${secreto.titulo}"?`)) return
+  promptMasterKey(secretoItems(secreto)[0] ?? '', () => borrarNota(secreto))
+}
+
+// ---------- Secretos ----------
+function openSecretoForm() {
+  secretoForm.value = { titulo: '', textos: [''] }
+  error.value = ''
+  sinClaveMaestra.value = !hasMasterPassword()
+  showSecretoForm.value = true
+}
+
+function addTextoSecreto() {
+  secretoForm.value.textos.push('')
+}
+
+function removeTextoSecreto(index: number) {
+  secretoForm.value.textos.splice(index, 1)
+  if (secretoForm.value.textos.length === 0) secretoForm.value.textos.push('')
+}
+
+/** Cifra cada texto y guarda el secreto (oculto = true) */
+async function crearSecreto() {
+  if (!cliente.value || !secretoForm.value.titulo) return
+  const textos = secretoForm.value.textos.map((t) => t.trim()).filter(Boolean)
+  if (textos.length === 0) {
+    error.value = 'Agrega al menos un texto secreto.'
+    return
+  }
+  const pass = getMasterPassword()
+  if (!pass) {
+    error.value = 'Aún no has creado tu clave maestra. Ve a Opciones para asignarla.'
+    return
+  }
+  saving.value = true
+  error.value = ''
+  try {
+    const cifrados: string[] = []
+    for (const t of textos) cifrados.push(await encryptText(t, pass))
+    const creado = await createNota({
+      cliente_id: cliente.value.id,
+      titulo: secretoForm.value.titulo,
+      dato: JSON.stringify(cifrados),
+      dato_extra: '',
+      oculto: true,
+    })
+    notasDb.value = [creado, ...notasDb.value]
+    showSecretoForm.value = false
+    secretoForm.value = { titulo: '', textos: [''] }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al crear el secreto'
+  } finally {
+    saving.value = false
+  }
+}
+
+/** Intenta descifrar un item y lo guarda en el mapa de revelados */
+async function intentarDescifrar(
+  payload: string,
+  pass: string,
+  nota: NotaRegistro,
+  index: number,
+): Promise<boolean> {
+  try {
+    const texto = await decryptText(payload, pass)
+    revelados.value[revealKey(nota, index)] = texto
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Revela un texto del secreto (pide la clave si el desbloqueo expiró) */
+function revelar(nota: NotaRegistro, index: number) {
+  const payload = secretoItems(nota)[index]
+  if (!payload) return
+  promptMasterKey(payload, async () => {
+    const pass = getMasterPassword()
+    if (pass) await intentarDescifrar(payload, pass, nota, index)
+  })
+}
+
+function ocultarRevelado(nota: NotaRegistro, index: number) {
+  delete revelados.value[revealKey(nota, index)]
+}
+
+/** Copia un texto del secreto al portapapeles (requiere la clave maestra) */
+function copiarSecreto(nota: NotaRegistro, index: number) {
+  const payload = secretoItems(nota)[index]
+  if (!payload) return
+  promptMasterKey(payload, async () => {
+    const pass = getMasterPassword()
+    if (!pass) return
+    // Usa el texto ya revelado si existe; si no, descifra SIN revelarlo en pantalla
+    let texto = revelados.value[revealKey(nota, index)]
+    if (texto === undefined) {
+      try {
+        texto = await decryptText(payload, pass)
+      } catch {
+        showToast('No se pudo descifrar', 'error')
+        return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(texto)
+      showToast('Copiado al portapapeles', 'success')
+    } catch {
+      showToast('No se pudo copiar', 'error')
+    }
+  })
+}
+
+/**
+ * Pide la clave maestra (si el desbloqueo de 5 min expiró) y ejecuta `action`.
+ * `check` es un texto cifrado de referencia para validar la clave ingresada.
+ */
+function promptMasterKey(check: string, action: () => void | Promise<void>) {
+  const pass = getMasterPassword()
+  if (pass && isMasterUnlocked()) {
+    void action()
+    return
+  }
+  pendingKeyCheck = check || null
+  pendingKeyAction = action
+  keyInput.value = ''
+  keyError.value = ''
+  showKeyPrompt.value = true
+}
+
+async function confirmarClave() {
+  const pass = keyInput.value
+  if (!pass || !pendingKeyAction) return
+  // Valida la clave descifrando el texto de referencia (si lo hay)
+  if (pendingKeyCheck) {
+    try {
+      await decryptText(pendingKeyCheck, pass)
+    } catch {
+      keyError.value = 'Clave incorrecta.'
+      return
+    }
+  }
+  // Recuerda la clave en la sesión y la desbloquea 5 minutos
+  setMasterPassword(pass)
+  unlockMaster()
+  const action = pendingKeyAction
+  pendingKeyAction = null
+  pendingKeyCheck = null
+  showKeyPrompt.value = false
+  await action()
+}
+
+// ---------- Edición de notas y secretos ----------
+const editingNotaId = ref<string | null>(null)
+const notaEditForm = ref({ titulo: '', dato: '' })
+
+function openNotaEdit(nota: NotaRegistro) {
+  notaEditForm.value = { titulo: nota.titulo, dato: nota.dato }
+  editingNotaId.value = nota.id
+}
+
+async function saveNotaEdit() {
+  if (!editingNotaId.value) return
+  saving.value = true
+  error.value = ''
+  try {
+    const updated = await updateNota(editingNotaId.value, {
+      titulo: notaEditForm.value.titulo,
+      dato: notaEditForm.value.dato,
+    })
+    notasDb.value = notasDb.value.map((n) => (n.id === updated.id ? updated : n))
+    editingNotaId.value = null
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al guardar nota'
+  } finally {
+    saving.value = false
+  }
+}
+
+const editingSecretoId = ref<string | null>(null)
+const secretoEditForm = ref({ titulo: '', textos: [''] })
+
+/** Abre la edición de un secreto (requiere la clave maestra) */
+function openSecretoEdit(secreto: NotaRegistro) {
+  const items = secretoItems(secreto)
+  promptMasterKey(items[0] ?? '', async () => {
+    const pass = getMasterPassword()
+    if (!pass) return
+    const textos: string[] = []
+    for (const c of items) {
+      try {
+        textos.push(await decryptText(c, pass))
+      } catch {
+        textos.push('')
+      }
+    }
+    if (textos.length === 0) textos.push('')
+    secretoEditForm.value = { titulo: secreto.titulo, textos }
+    editingSecretoId.value = secreto.id
+  })
+}
+
+function addTextoSecretoEdit() {
+  secretoEditForm.value.textos.push('')
+}
+
+function removeTextoSecretoEdit(index: number) {
+  secretoEditForm.value.textos.splice(index, 1)
+  if (secretoEditForm.value.textos.length === 0) secretoEditForm.value.textos.push('')
+}
+
+async function saveSecretoEdit() {
+  if (!editingSecretoId.value) return
+  const pass = getMasterPassword()
+  if (!pass) {
+    error.value = 'Aún no has creado tu clave maestra. Ve a Opciones para asignarla.'
+    return
+  }
+  const textos = secretoEditForm.value.textos.map((t) => t.trim()).filter(Boolean)
+  if (textos.length === 0) {
+    error.value = 'Agrega al menos un texto secreto.'
+    return
+  }
+  saving.value = true
+  error.value = ''
+  try {
+    const cifrados: string[] = []
+    for (const t of textos) cifrados.push(await encryptText(t, pass))
+    const updated = await updateNota(editingSecretoId.value, {
+      titulo: secretoEditForm.value.titulo,
+      dato: JSON.stringify(cifrados),
+      oculto: true,
+    })
+    notasDb.value = notasDb.value.map((n) => (n.id === updated.id ? updated : n))
+    // Limpia el contenido revelado del secreto editado
+    for (const k of Object.keys(revelados.value)) {
+      if (k.startsWith(`${updated.id}:`)) delete revelados.value[k]
+    }
+    editingSecretoId.value = null
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al guardar el secreto'
   } finally {
     saving.value = false
   }
@@ -547,6 +881,15 @@ async function removeNota(index: number) {
       <div class="head">
         <h1>{{ cliente.nombre }}</h1>
         <div class="head-actions">
+          <button
+            class="ghost"
+            :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
+            @click="toggleMontos"
+          >
+            <IconEyeOff v-if="showMontos" :size="18" />
+            <IconEye v-else :size="18" />
+            {{ showMontos ? 'Ocultar montos' : 'Ver montos' }}
+          </button>
           <button v-if="!editing" class="primary" @click="startEdit">
             <IconEdit :size="18" /> Editar
           </button>
@@ -609,16 +952,16 @@ async function removeNota(index: number) {
       <!-- Pestañas -->
       <nav class="tabs">
         <button :class="{ active: tab === 'socios' }" @click="tab = 'socios'">
-          <IconUsers :size="16" /> Socios
+          <IconUsers :size="16" /> Socios ({{ socios.length }})
         </button>
         <button :class="{ active: tab === 'notas' }" @click="tab = 'notas'">
-          <IconNotebook :size="16" /> Notas
+          <IconNotebook :size="16" /> Notas y secretos ({{ notasDb.length }})
         </button>
         <button :class="{ active: tab === 'proyectos' }" @click="tab = 'proyectos'">
-          <IconFolder :size="16" /> Proyectos
+          <IconFolder :size="16" /> Proyectos ({{ proyectos.length }})
         </button>
         <button :class="{ active: tab === 'servicios' }" @click="tab = 'servicios'">
-          <IconTools :size="16" /> Servicios
+          <IconTools :size="16" /> Servicios ({{ servicios.length }})
         </button>
       </nav>
 
@@ -669,6 +1012,7 @@ async function removeNota(index: number) {
         <ul v-else class="list">
           <li v-for="(socio, i) in socios" :key="i">
             <button class="socio-item" type="button" @click="openSocioEdit(i)">
+              <IconUser :size="16" class="socio-icon" />
               <strong>{{ socio.nombre }}</strong>
               <span v-if="socio.cargo"> · {{ socio.cargo }}</span>
               <span v-if="socio.celular"> · {{ socio.celular }}</span>
@@ -719,15 +1063,21 @@ async function removeNota(index: number) {
 
       <!-- Notas -->
       <div v-if="tab === 'notas'" class="tab-head">
-        <h2>Notas</h2>
-        <button class="primary" @click="showNotaForm = true">
-          <IconPlus :size="16" /> Agregar nota
-        </button>
+        <h2>Notas y secretos</h2>
+        <div class="tab-actions">
+          <button class="ghost" @click="openSecretoForm">
+            <IconLock :size="16" /> Crear secreto
+          </button>
+          <button class="primary" @click="showNotaForm = true">
+            <IconPlus :size="16" /> Agregar nota
+          </button>
+        </div>
       </div>
 
       <section v-if="tab === 'notas'" class="card">
 
-        <Modal v-if="showNotaForm" title="Nueva nota" @close="showNotaForm = false">
+        <!-- Nueva nota (texto plano) -->
+        <Modal v-if="showNotaForm" title="Nueva nota" size="sm" @close="showNotaForm = false">
           <form class="form" @submit.prevent="addNota">
             <div class="grid">
               <label class="full">
@@ -751,33 +1101,226 @@ async function removeNota(index: number) {
           </form>
         </Modal>
 
-        <p v-if="notas.length === 0" class="muted">Sin notas registradas.</p>
-
-        <ul v-else class="list notas">
-          <li v-for="(nota, i) in notas" :key="i">
-            <div>
-              <strong>{{ nota.titulo }}</strong>
-              <p v-if="nota.dato" class="pre">{{ nota.dato }}</p>
+        <!-- Nuevo secreto (varios textos cifrados) -->
+        <Modal v-if="showSecretoForm" title="Crear secreto" size="sm" @close="showSecretoForm = false">
+          <form class="form" @submit.prevent="crearSecreto">
+            <div class="grid">
+              <label class="full">
+                Título *
+                <input v-model="secretoForm.titulo" type="text" required />
+              </label>
             </div>
-            <button class="danger" title="Eliminar nota" @click="removeNota(i)">
-              <IconTrash :size="16" />
-            </button>
-          </li>
-        </ul>
+
+            <div class="secretos-form">
+              <label v-for="(_, i) in secretoForm.textos" :key="i" class="secreto-input">
+                <span class="dato-label"><IconLock :size="14" /> Dato {{ i + 1 }}</span>
+                <div class="secreto-input-row">
+                  <input v-model="secretoForm.textos[i]" type="text" />
+                  <button
+                    type="button"
+                    class="danger icon-btn"
+                    title="Quitar texto"
+                    @click="removeTextoSecreto(i)"
+                  >
+                    <IconTrash :size="16" />
+                  </button>
+                </div>
+              </label>
+              <button type="button" class="ghost" @click="addTextoSecreto">
+                <IconPlus :size="16" /> Agregar texto
+              </button>
+            </div>
+
+            <p v-if="sinClaveMaestra" class="hint warn-hint">
+              Aún no has creado una clave maestra.
+              Ve a <RouterLink to="/opciones">Opciones</RouterLink> para asignarla.
+            </p>
+            <p v-else class="hint">
+              Los textos se cifran con tu clave maestra (AES-GCM).
+            </p>
+
+            <p v-if="error" class="error">{{ error }}</p>
+            <div class="row">
+              <button type="submit" class="primary" :disabled="saving">
+                <IconLoader v-if="saving" :size="18" class="spin" />
+                <IconLock v-else :size="18" />
+                {{ saving ? 'Guardando…' : 'Guardar secreto' }}
+              </button>
+              <button type="button" class="ghost" @click="showSecretoForm = false">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+
+        <p v-if="notasDb.length === 0" class="muted">Sin notas registradas.</p>
+
+        <template v-else>
+          <!-- Notas -->
+          <ul v-if="notasPlanas.length > 0" class="list notas">
+            <li v-for="nota in notasPlanas" :key="nota.id">
+              <div>
+                <strong>{{ nota.titulo }}</strong>
+                <p v-if="nota.dato" class="pre">{{ nota.dato }}</p>
+              </div>
+              <div class="item-actions">
+                <button class="edit-btn" title="Editar nota" @click="openNotaEdit(nota)">
+                  <IconEdit :size="16" />
+                </button>
+                <button class="danger" title="Eliminar nota" @click="eliminarNota(nota)">
+                  <IconTrash :size="16" />
+                </button>
+              </div>
+            </li>
+          </ul>
+
+          <!-- Secretos -->
+          <h3 v-if="secretos.length > 0" class="sub-title">
+            <IconLock :size="16" /> Caja fuerte
+          </h3>
+          <ul v-if="secretos.length > 0" class="list secretos">
+            <li v-for="s in secretos" :key="s.id">
+              <div class="secreto-body">
+                <strong class="secreto-titulo"><IconVault :size="16" /> {{ s.titulo }}</strong>
+                <div class="secreto-items">
+                  <div v-for="(_, i) in secretoItems(s)" :key="i" class="secreto-item">
+                    <span v-if="estaRevelado(s, i)" class="secreto-texto">
+                      {{ textoRevelado(s, i) }}
+                    </span>
+                    <span v-else class="secreto-oculto">••••••••</span>
+                    <button
+                      v-if="!estaRevelado(s, i)"
+                      class="ghost reveal-btn"
+                      type="button"
+                      @click="revelar(s, i)"
+                    >
+                      <IconLockOpen :size="16" /> Revelar
+                    </button>
+                    <button
+                      v-else
+                      class="ghost reveal-btn"
+                      type="button"
+                      @click="ocultarRevelado(s, i)"
+                    >
+                      <IconLock :size="16" /> Ocultar
+                    </button>
+                    <button
+                      class="ghost reveal-btn"
+                      type="button"
+                      title="Copiar"
+                      @click="copiarSecreto(s, i)"
+                    >
+                      <IconClipboard :size="16" /> Copiar
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="item-actions">
+                <button class="edit-btn" title="Editar secreto" @click="openSecretoEdit(s)">
+                  <IconEdit :size="16" />
+                </button>
+                <button class="danger" title="Eliminar secreto" @click="eliminarSecreto(s)">
+                  <IconTrash :size="16" />
+                </button>
+              </div>
+            </li>
+          </ul>
+        </template>
+
+        <!-- Editar nota -->
+        <Modal v-if="editingNotaId" title="Editar nota" size="sm" @close="editingNotaId = null">
+          <form class="form" @submit.prevent="saveNotaEdit">
+            <div class="grid">
+              <label class="full">
+                Título *
+                <input v-model="notaEditForm.titulo" type="text" required />
+              </label>
+              <label class="full">
+                Dato
+                <textarea v-model="notaEditForm.dato" placeholder="Dato (texto)"></textarea>
+              </label>
+            </div>
+            <p v-if="error" class="error">{{ error }}</p>
+            <div class="row">
+              <button type="submit" class="primary" :disabled="saving">
+                <IconLoader v-if="saving" :size="18" class="spin" />
+                <IconCheck v-else :size="18" />
+                {{ saving ? 'Guardando…' : 'Guardar' }}
+              </button>
+              <button type="button" class="ghost" @click="editingNotaId = null">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+
+        <!-- Editar secreto (requiere clave maestra) -->
+        <Modal
+          v-if="editingSecretoId"
+          title="Editar secreto"
+          size="sm"
+          @close="editingSecretoId = null"
+        >
+          <form class="form" @submit.prevent="saveSecretoEdit">
+            <div class="grid">
+              <label class="full">
+                Título *
+                <input v-model="secretoEditForm.titulo" type="text" required />
+              </label>
+            </div>
+
+            <div class="secretos-form">
+              <label v-for="(_, i) in secretoEditForm.textos" :key="i" class="secreto-input">
+                <span class="dato-label"><IconLock :size="14" /> Dato {{ i + 1 }}</span>
+                <div class="secreto-input-row">
+                  <input v-model="secretoEditForm.textos[i]" type="text" />
+                  <button
+                    type="button"
+                    class="danger icon-btn"
+                    title="Quitar texto"
+                    @click="removeTextoSecretoEdit(i)"
+                  >
+                    <IconTrash :size="16" />
+                  </button>
+                </div>
+              </label>
+              <button type="button" class="ghost" @click="addTextoSecretoEdit">
+                <IconPlus :size="16" /> Agregar texto
+              </button>
+            </div>
+
+            <p class="hint">Al guardar, los textos se vuelven a cifrar con tu clave maestra.</p>
+
+            <p v-if="error" class="error">{{ error }}</p>
+            <div class="row">
+              <button type="submit" class="primary" :disabled="saving">
+                <IconLoader v-if="saving" :size="18" class="spin" />
+                <IconLock v-else :size="18" />
+                {{ saving ? 'Guardando…' : 'Guardar secreto' }}
+              </button>
+              <button type="button" class="ghost" @click="editingSecretoId = null">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+
+        <!-- Prompt de clave maestra para revelar/editar -->
+        <Modal v-if="showKeyPrompt" title="Clave maestra" size="sm" @close="showKeyPrompt = false">
+          <form class="form" @submit.prevent="confirmarClave">
+            <p class="hint">Ingresa tu clave maestra para continuar.</p>
+            <label>
+              Clave
+              <input v-model="keyInput" type="password" autocomplete="off" required />
+            </label>
+            <p v-if="keyError" class="error">{{ keyError }}</p>
+            <div class="row">
+              <button type="submit" class="primary">
+                <IconLockOpen :size="18" /> Continuar
+              </button>
+              <button type="button" class="ghost" @click="showKeyPrompt = false">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
       </section>
 
       <div v-if="tab === 'proyectos'" class="tab-head">
         <h2>Proyectos</h2>
         <div class="tab-actions">
-          <button
-            class="ghost"
-            :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
-            @click="toggleMontos"
-          >
-            <IconEyeOff v-if="showMontos" :size="16" />
-            <IconEye v-else :size="16" />
-            {{ showMontos ? 'Ocultar montos' : 'Ver montos' }}
-          </button>
           <button class="primary" @click="openProyectoForm">
             <IconPlus :size="16" /> Nuevo proyecto
           </button>
@@ -982,6 +1525,7 @@ async function removeNota(index: number) {
                   <option value="diario">Diario</option>
                   <option value="semanal">Semanal</option>
                   <option value="mensual">Mensual</option>
+                  <option value="bianual">Bianual</option>
                   <option value="anual">Anual</option>
                 </select>
               </label>
@@ -1072,6 +1616,7 @@ async function removeNota(index: number) {
                   <option value="diario">Diario</option>
                   <option value="semanal">Semanal</option>
                   <option value="mensual">Mensual</option>
+                  <option value="bianual">Bianual</option>
                   <option value="anual">Anual</option>
                 </select>
               </label>
@@ -1473,10 +2018,144 @@ button.danger {
   color: hsla(160, 100%, 30%, 1);
 }
 
+.socio-icon {
+  flex-shrink: 0;
+  color: var(--color-text-2);
+}
+
 .list .pre {
   white-space: pre-wrap;
   margin: 0.25rem 0 0;
   font-size: 0.9rem;
+}
+
+/* Secretos (is_notas con oculto = true) */
+.hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-2);
+}
+
+.warn-hint {
+  color: #9a6700;
+  background: rgba(255, 171, 0, 0.14);
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.35rem;
+  font-weight: 600;
+}
+
+.sub-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 1rem 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.secretos-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 0.35rem;
+}
+
+.secreto-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.dato-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.secreto-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.secreto-input-row input {
+  flex: 1;
+}
+
+.secreto-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.secreto-titulo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.secreto-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.secreto-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.secreto-texto {
+  font-family: monospace;
+  font-size: 0.9rem;
+  background: var(--color-background-mute);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.secreto-oculto {
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: var(--color-text-2);
+}
+
+.reveal-btn {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: hsla(160, 100%, 37%, 0.15);
+  color: hsla(160, 100%, 30%, 1);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.edit-btn:hover {
+  background: hsla(160, 100%, 37%, 0.3);
+  color: hsla(160, 100%, 25%, 1);
 }
 
 .error {
