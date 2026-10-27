@@ -177,7 +177,7 @@ function logout() {
 }
 
 .app-footer a {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
   font-weight: 600;
   text-decoration: none;
   padding: 0;
@@ -289,12 +289,12 @@ function logout() {
 }
 
 .menu a:hover {
-  background-color: hsla(160, 100%, 37%, 0.12);
+  background-color: hsl(var(--primary) / 0.12);
 }
 
 .menu a.router-link-exact-active {
-  background-color: hsla(160, 100%, 37%, 0.18);
-  color: hsla(160, 100%, 30%, 1);
+  background-color: hsl(var(--primary) / 0.18);
+  color: var(--color-primary-dark);
   font-weight: 600;
 }
 

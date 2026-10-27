@@ -259,7 +259,6 @@ async function guardar() {
           {{ monto(p.total) }}
         </div>
         <div class="card-bottom">
-          <span class="badge" :class="p.estado">{{ p.estado }}</span>
           <span class="cliente">
             <IconUser :size="14" />
             {{ clienteNombre(p.cliente_id) }}
@@ -346,7 +345,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -382,14 +381,14 @@ button.ghost {
 }
 
 .card:hover {
-  border-color: hsla(160, 100%, 37%, 0.5);
+  border-color: hsl(var(--primary) / 0.5);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .card-name {
   font-size: 1rem;
   font-weight: 700;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .card-desc {
@@ -420,32 +419,6 @@ button.ghost {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: capitalize;
-  flex-shrink: 0;
-}
-
-.badge.activo {
-  background: rgba(46, 160, 67, 0.15);
-  color: #1a7f37;
-}
-
-.badge.completado {
-  background: rgba(9, 105, 218, 0.15);
-  color: #0969da;
-}
-
-.badge.cancelado {
-  background: rgba(229, 72, 77, 0.15);
-  color: #e5484d;
 }
 
 .error {

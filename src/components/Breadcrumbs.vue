@@ -61,7 +61,7 @@ const router = useRouter()
 }
 
 .home {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .sep {

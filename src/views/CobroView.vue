@@ -8,14 +8,18 @@ import {
   IconCalendar,
   IconCash,
   IconCheck,
+  IconCircle,
   IconCoin,
+  IconDeviceIpadHorizontalUp,
   IconDeviceMobile,
+  IconEraser,
   IconEye,
   IconEyeOff,
   IconFolder,
   IconLoader,
   IconNotes,
   IconPhone,
+  IconSearch,
   IconTools,
   IconWallet,
 } from '@tabler/icons-vue'
@@ -142,15 +146,15 @@ function ordenar(lista: Pago[]): Pago[] {
 }
 
 const cobrosEsteMes = computed(() =>
-  ordenar(pagos.value.filter((p) => ym(p.fecha) === mesActual)),
+  ordenar(pagosFiltrados.value.filter((p) => ym(p.fecha) === mesActual)),
 )
 const cobrosProximoMes = computed(() =>
-  ordenar(pagos.value.filter((p) => ym(p.fecha) === mesProximo)),
+  ordenar(pagosFiltrados.value.filter((p) => ym(p.fecha) === mesProximo)),
 )
 
 /** Cobros pendientes de meses ANTERIORES (vencidos / morosos) */
 const cobrosVencidos = computed(() =>
-  ordenar(pagos.value.filter((p) => p.estado === 'pendiente' && ym(p.fecha) < mesActual)),
+  ordenar(pagosFiltrados.value.filter((p) => p.estado === 'pendiente' && ym(p.fecha) < mesActual)),
 )
 
 /** Suma de los montos pendientes (deudas) de una lista */
@@ -158,6 +162,44 @@ function totalPendiente(lista: Pago[]): number {
   return lista
     .filter((p) => p.estado === 'pendiente')
     .reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
+}
+
+// ---- Búsqueda por texto ----
+const busqueda = ref('')
+
+/** Normaliza texto para comparar (minúsculas, sin tildes) */
+function normalizar(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+/** Términos de búsqueda (separados por espacios) */
+const terminos = computed(() =>
+  normalizar(busqueda.value).split(/\s+/).filter(Boolean),
+)
+
+/** Texto indexable de un cobro: entidad, descripción y cliente */
+function textoBuscable(p: Pago): string {
+  return normalizar(`${entidadDe(p)?.nombre ?? ''} ${p.observaciones ?? ''} ${clienteNombreEntidad(p)}`)
+}
+
+/** Pagos que coinciden con todos los términos de búsqueda */
+const pagosFiltrados = computed(() => {
+  const t = terminos.value
+  if (t.length === 0) return pagos.value
+  return pagos.value.filter((p) => {
+    const texto = textoBuscable(p)
+    return t.every((term) => texto.includes(term))
+  })
+})
+
+const hayBusqueda = computed(() => terminos.value.length > 0)
+
+function limpiarBusqueda() {
+  busqueda.value = ''
 }
 
 // ---- Realizar pago ----
@@ -256,9 +298,32 @@ onMounted(load)
       </button>
     </div>
 
+    <!-- Buscador -->
+    <div class="search-bar">
+      <input
+        v-model="busqueda"
+        type="text"
+        placeholder="Buscar por proyecto, servicio, descripción o cliente…"
+        aria-label="Buscar cobros"
+      />
+      <button class="search-btn" type="button" title="Buscar" @click="busqueda = busqueda.trim()">
+        <IconSearch :size="18" />
+      </button>
+      <button class="clear-btn" type="button" title="Limpiar" @click="limpiarBusqueda">
+        <IconEraser :size="18" />
+      </button>
+    </div>
+
     <p v-if="loading" class="muted"><IconLoader :size="16" class="spin" /> Cargando…</p>
 
     <p v-else-if="error" class="error">{{ error }}</p>
+
+    <p
+      v-else-if="hayBusqueda && pagosFiltrados.length === 0"
+      class="muted"
+    >
+      <IconSearch :size="16" /> Sin resultados para “{{ busqueda }}”.
+    </p>
 
     <template v-else>
       <p v-if="error" class="error">{{ error }}</p>
@@ -310,6 +375,8 @@ onMounted(load)
                 class="badge"
                 :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
               >
+                <IconCheck v-if="p.estado === 'pagado'" :size="14" />
+                <IconCircle v-else-if="p.estado === 'pendiente'" :size="14" />
                 {{ pagoInfo(p.estado).label }}
               </span>
               <button
@@ -318,7 +385,7 @@ onMounted(load)
                 type="button"
                 @click="openRealizarPago(p)"
               >
-                <IconCash :size="16" /> Realizar pago
+                <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
               </button>
             </div>
           </li>
@@ -326,7 +393,7 @@ onMounted(load)
       </section>
 
       <!-- Cobros de este mes -->
-      <section class="card">
+      <section v-if="!hayBusqueda || cobrosEsteMes.length > 0" class="card">
         <div class="tab-head">
           <h2>Cobros de este mes</h2>
           <span class="total-pend">Por cobrar: {{ monto(totalPendiente(cobrosEsteMes)) }}</span>
@@ -370,6 +437,8 @@ onMounted(load)
                 class="badge"
                 :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
               >
+                <IconCheck v-if="p.estado === 'pagado'" :size="14" />
+                <IconCircle v-else-if="p.estado === 'pendiente'" :size="14" />
                 {{ pagoInfo(p.estado).label }}
               </span>
               <button
@@ -378,7 +447,7 @@ onMounted(load)
                 type="button"
                 @click="openRealizarPago(p)"
               >
-                <IconCash :size="16" /> Realizar pago
+                <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
               </button>
             </div>
           </li>
@@ -386,7 +455,7 @@ onMounted(load)
       </section>
 
       <!-- Cobros del próximo mes -->
-      <section class="card">
+      <section v-if="!hayBusqueda || cobrosProximoMes.length > 0" class="card">
         <div class="tab-head">
           <h2>Del próximo mes</h2>
           <span class="total-pend">Por cobrar: {{ monto(totalPendiente(cobrosProximoMes)) }}</span>
@@ -430,6 +499,8 @@ onMounted(load)
                 class="badge"
                 :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
               >
+                <IconCheck v-if="p.estado === 'pagado'" :size="14" />
+                <IconCircle v-else-if="p.estado === 'pendiente'" :size="14" />
                 {{ pagoInfo(p.estado).label }}
               </span>
               <button
@@ -438,7 +509,7 @@ onMounted(load)
                 type="button"
                 @click="openRealizarPago(p)"
               >
-                <IconCash :size="16" /> Realizar pago
+                <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
               </button>
             </div>
           </li>
@@ -515,6 +586,55 @@ onMounted(load)
   font-size: 1.5rem;
 }
 
+/* Buscador */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: hsl(var(--primary) / 0.6);
+}
+
+.search-btn,
+.clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.search-btn:hover {
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
+}
+
+.clear-btn:hover {
+  background: rgba(229, 72, 77, 0.1);
+  color: #e5484d;
+}
+
 .card {
   margin-top: 1rem;
 }
@@ -559,7 +679,7 @@ onMounted(load)
 .total-pend {
   font-size: 0.85rem;
   font-weight: 600;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .list {
@@ -624,7 +744,7 @@ onMounted(load)
 }
 
 .entidad-link:hover {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .tipo-badge {
@@ -688,6 +808,7 @@ onMounted(load)
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 0.3rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;
@@ -700,10 +821,10 @@ onMounted(load)
   align-items: center;
   gap: 0.3rem;
   padding: 0.4rem 0.7rem;
-  border: 1px solid hsla(160, 100%, 37%, 0.5);
+  border: 1px solid hsl(var(--primary) / 0.5);
   border-radius: 0.35rem;
   background: transparent;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -712,7 +833,7 @@ onMounted(load)
 }
 
 .realizar-pago:hover {
-  background: hsla(160, 100%, 37%, 0.12);
+  background: hsl(var(--primary) / 0.12);
 }
 
 /* Formulario / modal */
@@ -765,7 +886,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -853,11 +974,103 @@ button.ghost {
   .cobro {
     flex-direction: column;
     align-items: stretch;
+    gap: 0.4rem;
+    padding: 0.85rem;
   }
 
-  .cobro-right {
-    justify-content: flex-start;
-    margin-left: 0;
+  /* Aplanar los wrappers para tratar cada dato como una fila independiente */
+  .cobro-left,
+  .cobro-right,
+  .cobro-sub {
+    display: contents;
+  }
+
+  /* 1) Nombre grande en negrita y, debajo, su etiqueta */
+  .cobro-head {
+    order: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  .cobro-head .entidad-link {
+    order: -1;
+    font-size: 1.15rem;
+    font-weight: 700;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /* 2) Datos en gris, cada uno en una fila: etiqueta | valor */
+  .cobro-obs,
+  .cobro-sub > .cliente,
+  .cobro-sub > .pago-fecha,
+  .cobro-sub > .adelanto,
+  .cobro-right > .monto {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    width: 100%;
+    font-size: 0.85rem;
+    font-style: normal;
+    font-weight: 400;
+    color: #6e7781;
+  }
+
+  .cobro-obs::before,
+  .cliente::before,
+  .pago-fecha::before,
+  .monto::before,
+  .adelanto::before {
+    margin-right: auto;
+    flex-shrink: 0;
+  }
+
+  .cobro-obs::before {
+    content: 'Descripción';
+  }
+  .cliente::before {
+    content: 'Cliente';
+  }
+  .pago-fecha::before {
+    content: 'Fecha';
+  }
+  .monto::before {
+    content: 'Monto';
+  }
+  .adelanto::before {
+    content: 'Adelanto';
+  }
+
+  .cobro-obs {
+    order: 2;
+  }
+  .cliente {
+    order: 3;
+  }
+  .pago-fecha {
+    order: 4;
+  }
+  .monto {
+    order: 5;
+  }
+  .adelanto {
+    order: 6;
+  }
+
+  /* 3) Badge de estado y botón largo */
+  .cobro-right > .badge {
+    order: 7;
+    align-self: flex-end;
+    margin-top: 0.15rem;
+  }
+
+  .cobro-right > .realizar-pago {
+    order: 8;
+    width: 100%;
   }
 }
 </style>

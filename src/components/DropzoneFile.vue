@@ -143,9 +143,9 @@ function removeAt(index: number) {
 
 .dropzone-zone:hover,
 .dropzone-zone.dz-drag-hover {
-  border-color: hsla(160, 100%, 37%, 0.6);
-  background: hsla(160, 100%, 37%, 0.06);
-  color: hsla(160, 100%, 30%, 1);
+  border-color: hsl(var(--primary) / 0.6);
+  background: hsl(var(--primary) / 0.06);
+  color: var(--color-primary-dark);
 }
 
 .dropzone-zone .text {
@@ -179,7 +179,7 @@ function removeAt(index: number) {
 }
 
 .file-chip.server .name {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .file-chip.server .name:hover {

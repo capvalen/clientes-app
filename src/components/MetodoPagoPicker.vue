@@ -56,12 +56,12 @@ const model = defineModel<string>({ default: 'Efectivo' })
 }
 
 .metodo-option:hover {
-  border-color: hsla(160, 100%, 37%, 0.5);
+  border-color: hsl(var(--primary) / 0.5);
 }
 
 .metodo-option.active {
-  border-color: hsla(160, 100%, 37%, 1);
-  background: hsla(160, 100%, 37%, 0.12);
+  border-color: var(--color-primary);
+  background: hsl(var(--primary) / 0.12);
   font-weight: 600;
 }
 </style>

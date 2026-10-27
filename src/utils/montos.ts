@@ -13,8 +13,8 @@ watch(showMontos, (value) => {
   localStorage.setItem(STORAGE_KEY, value ? '1' : '0')
 })
 
-/** Texto mostrado cuando los montos están ocultos */
-export const MONTO_OCULTO = 'S/ [***]'
+/** Texto mostrado cuando los montos están ocultos (para inputs/atributos, sin HTML) */
+export const MONTO_OCULTO = 'S/ •••'
 
 /** Formatea un monto en soles respetando el estado global de visibilidad */
 export function monto(value: number | string | null | undefined): string {

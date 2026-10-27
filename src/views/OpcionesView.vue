@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { IconKey, IconLoader, IconCheck, IconTrash, IconLock, IconShieldLock } from '@tabler/icons-vue'
+import {
+  IconKey,
+  IconCheck,
+  IconTrash,
+  IconLock,
+  IconShieldLock,
+  IconPalette,
+} from '@tabler/icons-vue'
 import {
   clearMasterPassword,
   hasMasterPassword,
@@ -9,7 +16,11 @@ import {
   UNLOCK_MS,
 } from '../utils/crypto'
 import { showToast } from '../utils/toast'
+import { THEMES, setTheme, theme } from '../utils/theme'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
+
+/** Pestaña activa de la página de opciones */
+const activeTab = ref<'tema' | 'secretos'>('tema')
 
 const clave1 = ref('')
 const clave2 = ref('')
@@ -65,7 +76,70 @@ function bloquear() {
       <h1><IconShieldLock :size="26" /> Opciones</h1>
     </div>
 
-    <section class="card">
+    <div class="tabs" role="tablist" aria-label="Opciones">
+      <button
+        id="tab-tema"
+        class="tab"
+        :class="{ active: activeTab === 'tema' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'tema'"
+        aria-controls="panel-tema"
+        @click="activeTab = 'tema'"
+      >
+        <IconPalette :size="16" /> Tema
+      </button>
+      <button
+        id="tab-secretos"
+        class="tab"
+        :class="{ active: activeTab === 'secretos' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'secretos'"
+        aria-controls="panel-secretos"
+        @click="activeTab = 'secretos'"
+      >
+        <IconKey :size="16" /> Secretos
+      </button>
+    </div>
+
+    <section
+      v-if="activeTab === 'tema'"
+      id="panel-tema"
+      class="card"
+      role="tabpanel"
+      aria-labelledby="tab-tema"
+    >
+      <h2><IconPalette :size="18" /> Color del tema</h2>
+      <p class="hint">
+        Elige el color primario de la aplicación. La preferencia se guarda en este navegador.
+      </p>
+      <div class="themes">
+        <button
+          v-for="t in THEMES"
+          :key="t.id"
+          type="button"
+          class="theme-option"
+          :class="{ active: theme === t.id }"
+          :aria-pressed="theme === t.id"
+          :title="t.label"
+          @click="setTheme(t.id)"
+        >
+          <span class="swatch" :style="{ background: t.color }">
+            <IconCheck v-if="theme === t.id" :size="18" />
+          </span>
+          <span class="theme-name">{{ t.label }}</span>
+        </button>
+      </div>
+    </section>
+
+    <section
+      v-else
+      id="panel-secretos"
+      class="card"
+      role="tabpanel"
+      aria-labelledby="tab-secretos"
+    >
       <h2><IconKey :size="18" /> Crear clave de secretos</h2>
 
       <p class="hint">
@@ -127,6 +201,91 @@ function bloquear() {
   gap: 0.5rem;
   margin: 0;
   font-size: 1.5rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: -1px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0.35rem 0.35rem 0 0;
+  color: var(--color-text-2);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--color-text);
+  background: var(--color-background-mute);
+}
+
+.tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.theme-option:hover {
+  border-color: var(--color-primary);
+}
+
+.theme-option.active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.theme-name {
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .card {
@@ -218,7 +377,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 

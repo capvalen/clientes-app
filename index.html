@@ -8,7 +8,7 @@
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#0d9488">
+    <meta name="theme-color" content="#00bd7e">
     <meta name="description" content="Gestión de clientes, proyectos, servicios y cobros.">
 
     <!-- Instalación en Android / iOS -->
@@ -16,7 +16,28 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Deal Desk">
-    <link rel="apple-touch-icon" href="/icon-256.png">
+    <meta name="apple-touch-icon" href="/icon-256.png">
+
+    <!-- Aplica el tema guardado antes de pintar para evitar un flash de color -->
+    <script>
+      try {
+        // Debe coincidir con THEMES de src/utils/theme.ts
+        var THEME_COLORS = {
+          verde: '#00bd7e',
+          naranja: '#f97316',
+          morado: '#7c3aed',
+          grises: '#4b5563',
+        }
+        var savedTheme = localStorage.getItem('pb_theme')
+        if (savedTheme && THEME_COLORS[savedTheme]) {
+          document.documentElement.dataset.theme = savedTheme
+          var themeColor = document.querySelector('meta[name="theme-color"]')
+          if (themeColor) themeColor.setAttribute('content', THEME_COLORS[savedTheme])
+        }
+      } catch (e) {
+        /* localStorage no disponible */
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

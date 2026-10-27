@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import html2canvas from 'html2canvas'
 import {
@@ -9,8 +9,10 @@ import {
   IconCamera,
   IconCash,
   IconCheck,
+  IconChevronDown,
   IconClock,
   IconCoin,
+  IconDeviceIpadHorizontalUp,
   IconDeviceMobile,
   IconDeviceDesktop,
   IconEdit,
@@ -44,7 +46,7 @@ import {
   type Cliente,
 } from '../api/pocketbase'
 import { capitalize, formatDate, formatDateTime, formatFechaHora, pbDateTime, upperFirst } from '../utils/format'
-import { showMontos, monto, toggleMontos } from '../utils/montos'
+import { showMontos, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
 import DropzoneFile from '../components/DropzoneFile.vue'
@@ -164,6 +166,56 @@ function metodoInfo(metodo: string) {
 function pagoInfo(estado: string) {
   return ESTADO_PAGO[estado] ?? { label: estado, color: '#6e7781', bg: '#eaeef2' }
 }
+
+// ---- Estado del proyecto (selector desplegable) ----
+const ESTADO_PROYECTO: Record<string, { label: string; color: string; bg: string }> = {
+  activo: { label: 'Activo', color: '#1a7f37', bg: '#dafbe1' },
+  completado: { label: 'Completado', color: '#0969da', bg: '#ddf4ff' },
+  cancelado: { label: 'Cancelado', color: '#e5484d', bg: '#ffebe9' },
+}
+
+function proyectoEstadoInfo(estado: string) {
+  return (
+    ESTADO_PROYECTO[estado] ?? {
+      label: capitalize(estado),
+      color: '#6e7781',
+      bg: '#eaeef2',
+    }
+  )
+}
+
+const estadoRef = ref<HTMLElement | null>(null)
+const estadoMenuOpen = ref(false)
+const cambiandoEstado = ref(false)
+
+function toggleEstadoMenu() {
+  if (cambiandoEstado.value) return
+  estadoMenuOpen.value = !estadoMenuOpen.value
+}
+
+async function cambiarEstado(estado: Proyecto['estado']) {
+  estadoMenuOpen.value = false
+  if (!proyecto.value || proyecto.value.estado === estado) return
+  cambiandoEstado.value = true
+  error.value = ''
+  try {
+    proyecto.value = await updateProyecto(proyecto.value.id, { estado })
+    editForm.value.estado = estado
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al cambiar el estado'
+  } finally {
+    cambiandoEstado.value = false
+  }
+}
+
+function onDocClick(e: MouseEvent) {
+  if (estadoMenuOpen.value && estadoRef.value && !estadoRef.value.contains(e.target as Node)) {
+    estadoMenuOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', onDocClick))
+onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 /** Indica si el comprobante es una imagen (por extensión) */
 function esImagen(nombre: string | undefined): boolean {
@@ -596,11 +648,55 @@ onMounted(load)
       <!-- Valores del proyecto -->
       <section class="card">
         <dl class="fields">
-          <div><dt>Total</dt><dd class="total">{{ monto(proyecto.total) }}</dd></div>
-          <div><dt>Adelanto</dt><dd>{{ monto(totalAdelanto) }}</dd></div>
-          <div><dt>Restante</dt><dd class="restante">{{ monto(restante) }}</dd></div>
+          <div><dt>Total</dt><dd class="total"><Monto :value="proyecto.total" /></dd></div>
+          <div><dt>Adelanto</dt><dd><Monto :value="totalAdelanto" /></dd></div>
+          <div><dt>Restante</dt><dd class="restante"><Monto :value="restante" /></dd></div>
           <div><dt>Progreso</dt><dd>{{ Number(proyecto.progreso) || 0 }}%</dd></div>
-          <div><dt>Estado</dt><dd>{{ capitalize(proyecto.estado) }}</dd></div>
+          <div>
+            <dt>Estado</dt>
+            <dd class="estado-dd">
+              <div ref="estadoRef" class="estado-wrap">
+                <button
+                  type="button"
+                  class="estado-btn"
+                  :style="{
+                    color: proyectoEstadoInfo(proyecto.estado).color,
+                    background: proyectoEstadoInfo(proyecto.estado).bg,
+                  }"
+                  :disabled="cambiandoEstado"
+                  title="Cambiar estado"
+                  aria-haspopup="listbox"
+                  :aria-expanded="estadoMenuOpen"
+                  @click="toggleEstadoMenu"
+                >
+                  <IconLoader v-if="cambiandoEstado" :size="13" class="spin" />
+                  {{ proyectoEstadoInfo(proyecto.estado).label }}
+                  <IconChevronDown
+                    :size="14"
+                    class="caret"
+                    :class="{ open: estadoMenuOpen }"
+                  />
+                </button>
+
+                <ul v-if="estadoMenuOpen" class="estado-menu" role="listbox">
+                  <li v-for="(info, key) in ESTADO_PROYECTO" :key="key">
+                    <button
+                      type="button"
+                      class="estado-item"
+                      :class="{ active: proyecto.estado === key }"
+                      role="option"
+                      :aria-selected="proyecto.estado === key"
+                      @click="cambiarEstado(key as Proyecto['estado'])"
+                    >
+                      <span class="dot" :style="{ background: info.color }"></span>
+                      {{ info.label }}
+                      <IconCheck v-if="proyecto.estado === key" :size="14" class="check" />
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </dd>
+          </div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(proyecto.fecha_inicio) }}</dd></div>
           <div><dt>Fecha final</dt><dd>{{ formatDate(proyecto.fecha_final) }}</dd></div>
           <div><dt>Descripción</dt><dd>{{ proyecto.descripcion || '—' }}</dd></div>
@@ -762,7 +858,7 @@ onMounted(load)
           <li v-for="pago in pagosFiltrados" :key="pago.id">
             <div class="pago-wrap">
               <button class="pago-item" type="button" @click="openPagoDetalle(pago)">
-                <strong class="monto">{{ monto(pago.monto) }}</strong>
+                <strong class="monto"><Monto :value="pago.monto" /></strong>
                 <span class="pago-sep">·</span>
                 <span class="pago-desc">{{ pago.observaciones || '' }}</span>
                 <span v-if="pago.que_es === 'deuda'" class="que-es-badge">Deuda</span>
@@ -792,7 +888,7 @@ onMounted(load)
                 {{ formatFechaHora(pago.fecha) }}
               </span>
               <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
-                Adelanto: {{ monto(pago.adelanto) }}
+                Adelanto: <Monto :value="pago.adelanto" />
               </span>
             </div>
             <span
@@ -808,7 +904,7 @@ onMounted(load)
               title="Realizar pago"
               @click="openRealizarPago(pago)"
             >
-              <IconCash :size="16" /> Realizar pago
+              <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
             </button>
             <button
               class="edit-pago"
@@ -834,9 +930,9 @@ onMounted(load)
                 <dt>Descripción</dt>
                 <dd>{{ realizarPagoTarget.observaciones }}</dd>
               </div>
-              <div><dt>Total</dt><dd>{{ monto(realizarPagoTarget.monto) }}</dd></div>
-              <div><dt>Abonado</dt><dd class="abonado">{{ monto(realizarPagoTarget.adelanto) }}</dd></div>
-              <div><dt>Pendiente</dt><dd class="restante">{{ monto(saldoDeuda) }}</dd></div>
+              <div><dt>Total</dt><dd><Monto :value="realizarPagoTarget.monto" /></dd></div>
+              <div><dt>Abonado</dt><dd class="abonado"><Monto :value="realizarPagoTarget.adelanto" /></dd></div>
+              <div><dt>Pendiente</dt><dd class="restante"><Monto :value="saldoDeuda" /></dd></div>
             </dl>
             <div class="grid">
               <label class="full">
@@ -1132,7 +1228,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -1178,13 +1274,109 @@ button.danger:hover {
 .fields .total {
   font-size: 1.4rem;
   font-weight: 700;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .fields .restante {
   font-size: 1.4rem;
   font-weight: 700;
   color: #e5484d;
+}
+
+/* Selector de estado (desplegable) */
+.estado-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.estado-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.estado-btn:hover {
+  filter: brightness(0.96);
+}
+
+.estado-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.estado-btn .caret {
+  transition: transform 0.15s ease;
+}
+
+.estado-btn .caret.open {
+  transform: rotate(180deg);
+}
+
+.estado-menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 20;
+  min-width: 160px;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  /* El dd padre usa white-space: pre-wrap (heredado); se neutraliza aquí */
+  white-space: normal;
+  text-align: left;
+}
+
+.estado-menu li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.estado-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.estado-item:hover {
+  background: var(--color-background-mute);
+}
+
+.estado-item.active {
+  font-weight: 600;
+}
+
+.estado-item .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.estado-item .check {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .fields .full {
@@ -1233,9 +1425,9 @@ button.danger:hover {
 }
 
 .tab-actions button.active {
-  border-color: hsla(160, 100%, 37%, 0.6);
-  background: hsla(160, 100%, 37%, 0.15);
-  color: hsla(160, 100%, 30%, 1);
+  border-color: hsl(var(--primary) / 0.6);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
   font-weight: 600;
 }
 
@@ -1331,10 +1523,10 @@ button.danger:hover {
   align-items: center;
   gap: 0.3rem;
   padding: 0.35rem 0.6rem;
-  border: 1px solid hsla(160, 100%, 37%, 0.5);
+  border: 1px solid hsl(var(--primary) / 0.5);
   border-radius: 0.35rem;
   background: transparent;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -1343,11 +1535,11 @@ button.danger:hover {
 }
 
 .realizar-pago:hover {
-  background: hsla(160, 100%, 37%, 0.12);
+  background: hsl(var(--primary) / 0.12);
 }
 
 .pago-item:hover {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .pago-item .monto {
@@ -1380,8 +1572,8 @@ button.danger:hover {
 }
 
 .adjunto:hover {
-  color: hsla(160, 100%, 30%, 1);
-  background: hsla(160, 100%, 37%, 0.12);
+  color: var(--color-primary-dark);
+  background: hsl(var(--primary) / 0.12);
 }
 
 .edit-pago {
@@ -1391,8 +1583,8 @@ button.danger:hover {
   padding: 0.3rem;
   border: 0;
   border-radius: 0.35rem;
-  background: hsla(160, 100%, 37%, 0.15);
-  color: hsla(160, 100%, 30%, 1);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -1401,8 +1593,8 @@ button.danger:hover {
 }
 
 .edit-pago:hover {
-  background: hsla(160, 100%, 37%, 0.3);
-  color: hsla(160, 100%, 25%, 1);
+  background: hsl(var(--primary) / 0.3);
+  color: var(--color-primary-darker);
 }
 
 .pago-detail {
@@ -1501,7 +1693,7 @@ button.danger:hover {
   text-align: center;
   font-size: 1.8rem;
   font-weight: 800;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .ticket-moneda {
@@ -1547,7 +1739,7 @@ button.danger:hover {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
   text-decoration: none;
   font-size: 0.85rem;
 }

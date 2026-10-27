@@ -10,6 +10,7 @@ import {
   IconCash,
   IconCheck,
   IconCoin,
+  IconDeviceIpadHorizontalUp,
   IconDeviceMobile,
   IconEdit,
   IconEye,
@@ -830,7 +831,7 @@ onMounted(load)
               title="Realizar pago"
               @click="openRealizarPago(pago)"
             >
-              <IconCash :size="16" /> Realizar pago
+              <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
             </button>
             <button
               class="edit-pago"
@@ -1193,7 +1194,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -1239,7 +1240,7 @@ button.danger:hover {
 .fields .total {
   font-size: 1.4rem;
   font-weight: 700;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .fields .restante {
@@ -1385,10 +1386,10 @@ button.danger:hover {
   align-items: center;
   gap: 0.3rem;
   padding: 0.35rem 0.6rem;
-  border: 1px solid hsla(160, 100%, 37%, 0.5);
+  border: 1px solid hsl(var(--primary) / 0.5);
   border-radius: 0.35rem;
   background: transparent;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -1397,11 +1398,11 @@ button.danger:hover {
 }
 
 .realizar-pago:hover {
-  background: hsla(160, 100%, 37%, 0.12);
+  background: hsl(var(--primary) / 0.12);
 }
 
 .pago-item:hover {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .pago-item .monto {
@@ -1434,8 +1435,8 @@ button.danger:hover {
 }
 
 .adjunto:hover {
-  color: hsla(160, 100%, 30%, 1);
-  background: hsla(160, 100%, 37%, 0.12);
+  color: var(--color-primary-dark);
+  background: hsl(var(--primary) / 0.12);
 }
 
 .edit-pago {
@@ -1445,8 +1446,8 @@ button.danger:hover {
   padding: 0.3rem;
   border: 0;
   border-radius: 0.35rem;
-  background: hsla(160, 100%, 37%, 0.15);
-  color: hsla(160, 100%, 30%, 1);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -1455,8 +1456,8 @@ button.danger:hover {
 }
 
 .edit-pago:hover {
-  background: hsla(160, 100%, 37%, 0.3);
-  color: hsla(160, 100%, 25%, 1);
+  background: hsl(var(--primary) / 0.3);
+  color: var(--color-primary-darker);
 }
 
 /* Ticket / constancia de pago */
@@ -1533,7 +1534,7 @@ button.danger:hover {
   text-align: center;
   font-size: 1.8rem;
   font-weight: 800;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .ticket-moneda {
@@ -1579,7 +1580,7 @@ button.danger:hover {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
   text-decoration: none;
   font-size: 0.85rem;
 }
@@ -1688,7 +1689,7 @@ button.danger:hover {
 
 .cronograma-monto {
   font-weight: 600;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .cronograma-total {
@@ -1705,6 +1706,6 @@ button.danger:hover {
 }
 
 .cronograma-total strong:last-child {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 </style>

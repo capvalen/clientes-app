@@ -1741,7 +1741,7 @@ async function saveSecretoEdit() {
 }
 
 .proy-card:hover {
-  border-color: hsla(160, 100%, 37%, 0.5);
+  border-color: hsl(var(--primary) / 0.5);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
@@ -1771,7 +1771,7 @@ async function saveSecretoEdit() {
 .proy-total {
   font-size: 1.6rem;
   font-weight: 700;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .proy-progress {
@@ -1791,7 +1791,7 @@ async function saveSecretoEdit() {
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   transition: width 0.3s ease;
 }
 
@@ -1922,7 +1922,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -1969,12 +1969,12 @@ button.danger {
 
 .tabs button:hover {
   color: var(--color-text);
-  background-color: hsla(160, 100%, 37%, 0.08);
+  background-color: hsl(var(--primary) / 0.08);
 }
 
 .tabs button.active {
   color: var(--color-text);
-  border-bottom-color: hsla(160, 100%, 37%, 1);
+  border-bottom-color: var(--color-primary);
   font-weight: 700;
 }
 
@@ -2015,7 +2015,7 @@ button.danger {
 }
 
 .socio-item:hover {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .socio-icon {
@@ -2145,8 +2145,8 @@ button.danger {
   padding: 0.3rem;
   border: 0;
   border-radius: 0.35rem;
-  background: hsla(160, 100%, 37%, 0.15);
-  color: hsla(160, 100%, 30%, 1);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -2154,8 +2154,8 @@ button.danger {
 }
 
 .edit-btn:hover {
-  background: hsla(160, 100%, 37%, 0.3);
-  color: hsla(160, 100%, 25%, 1);
+  background: hsl(var(--primary) / 0.3);
+  color: var(--color-primary-darker);
 }
 
 .error {

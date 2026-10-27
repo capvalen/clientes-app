@@ -89,9 +89,9 @@ async function submit() {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(34, 197, 94, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 80%, rgba(34, 197, 94, 0.05) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 50%, hsl(var(--primary) / 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, hsl(var(--primary) / 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, hsl(var(--primary) / 0.05) 0%, transparent 50%);
   z-index: 0;
 }
 
@@ -128,9 +128,9 @@ async function submit() {
   width: 56px;
   height: 56px;
   border-radius: 14px;
-  background: linear-gradient(135deg, hsla(160, 100%, 37%, 1), hsla(160, 100%, 30%, 1));
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   color: white;
-  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 4px 14px hsl(var(--primary) / 0.3);
 }
 
 .brand-icon svg {
@@ -183,7 +183,7 @@ async function submit() {
 }
 
 .input-wrapper:focus-within .input-icon {
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 input {
@@ -204,9 +204,9 @@ input::placeholder {
 }
 
 input:focus {
-  border-color: hsla(160, 100%, 37%, 1);
+  border-color: var(--color-primary);
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12);
 }
 
 button {
@@ -217,19 +217,19 @@ button {
   padding: 0.75rem 1rem;
   border: 0;
   border-radius: 0.5rem;
-  background: linear-gradient(135deg, hsla(160, 100%, 37%, 1), hsla(160, 100%, 30%, 1));
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   color: white;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
   letter-spacing: 0.01em;
 }
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+  box-shadow: 0 4px 16px hsl(var(--primary) / 0.4);
 }
 
 button:active:not(:disabled) {

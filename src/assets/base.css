@@ -28,6 +28,36 @@
   --section-gap: 160px;
 }
 
+/* Tema de color primario (configurable desde Opciones) */
+:root {
+  --primary: 160 100% 37%;
+  --primary-dark: 160 100% 30%;
+  --primary-darker: 160 100% 25%;
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-dark: hsl(var(--primary-dark));
+  --color-primary-darker: hsl(var(--primary-darker));
+}
+
+:root[data-theme='naranja'] {
+  --primary: 25 95% 53%;
+  --primary-dark: 25 95% 45%;
+  --primary-darker: 25 95% 37%;
+}
+
+:root[data-theme='morado'] {
+  --primary: 262 83% 58%;
+  --primary-dark: 262 83% 48%;
+  --primary-darker: 262 83% 40%;
+}
+
+:root[data-theme='grises'] {
+  --primary: 215 14% 45%;
+  --primary-dark: 215 14% 36%;
+  --primary-darker: 215 14% 28%;
+}
+
+
 *,
 *::before,
 *::after {

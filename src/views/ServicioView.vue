@@ -8,6 +8,7 @@ import {
   IconUser,
   IconEye,
   IconEyeOff,
+  IconCalendar,
 } from '@tabler/icons-vue'
 import {
   listServicios,
@@ -259,12 +260,14 @@ async function guardar() {
           {{ monto(s.total) }}
         </div>
         <div class="card-bottom">
-          <span class="badge" :class="s.estado">{{ s.estado }}</span>
           <span class="cliente">
             <IconUser :size="14" />
             {{ clienteNombre(s.cliente_id) }}
           </span>
-          <span class="periocidad">{{ PERIOCIDAD_LABEL[s.periocidad] }}</span>
+          <span class="periocidad">
+            <IconCalendar :size="14" />
+            {{ PERIOCIDAD_LABEL[s.periocidad] }}
+          </span>
         </div>
       </RouterLink>
     </div>
@@ -340,7 +343,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -376,14 +379,14 @@ button.ghost {
 }
 
 .card:hover {
-  border-color: hsla(160, 100%, 37%, 0.5);
+  border-color: hsl(var(--primary) / 0.5);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .card-name {
   font-size: 1rem;
   font-weight: 700;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .card-desc {
@@ -405,34 +408,18 @@ button.ghost {
   gap: 0.5rem;
 }
 
-.badge {
+.periocidad {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.badge.activo {
-  background: rgba(46, 160, 67, 0.15);
-  color: #1a7f37;
-}
-
-.badge.inactivo {
-  background: rgba(110, 118, 129, 0.15);
-  color: #6e7781;
-}
-
-.badge.suspendido {
-  background: rgba(229, 72, 77, 0.15);
-  color: #e5484d;
-}
-
-.periocidad {
+  gap: 0.3rem;
   font-size: 0.8rem;
+  line-height: 1;
   color: var(--color-text-2);
+}
+
+.periocidad :deep(svg) {
+  display: block;
+  flex-shrink: 0;
 }
 
 .cliente {
@@ -516,7 +503,7 @@ button.ghost {
 
 .pago-monto {
   font-weight: 600;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .pago-estado {

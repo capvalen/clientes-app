@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { IconPlus, IconLoader, IconFolder, IconUsers, IconSearch, IconEraser, IconTool } from '@tabler/icons-vue'
+import { IconPlus, IconLoader, IconFolder, IconUsers, IconSearch, IconEraser, IconTool, IconArrowsSort, IconSortAscendingLetters } from '@tabler/icons-vue'
 import {
   listClientes,
   listProyectos,
@@ -26,14 +26,43 @@ const form = ref({ nombre: '', celular: '', ruc: '', direccion: '', email: '' })
 // Filtro de búsqueda
 const busqueda = ref('')
 
+const ORDEN_STORAGE_KEY = 'pb_orden_clientes'
+
+/** Orden de la lista: 'bd' = tal como viene de la base de datos, 'az' = alfabético */
+function leerOrdenGuardado(): 'bd' | 'az' {
+  return localStorage.getItem(ORDEN_STORAGE_KEY) === 'az' ? 'az' : 'bd'
+}
+
+const orden = ref<'bd' | 'az'>(leerOrdenGuardado())
+
+// Si no existía la preferencia, se crea con el valor por defecto ('bd')
+localStorage.setItem(ORDEN_STORAGE_KEY, orden.value)
+
+// Persiste cada cambio para conservarlo entre visitas
+watch(orden, (value) => {
+  localStorage.setItem(ORDEN_STORAGE_KEY, value)
+})
+
+function alternarOrden() {
+  orden.value = orden.value === 'az' ? 'bd' : 'az'
+}
+
 const clientesFiltrados = computed(() => {
   const q = busqueda.value.trim().toLowerCase()
-  if (!q) return clientes.value
-  return clientes.value.filter((c) =>
-    [c.nombre, c.celular, c.ruc, c.email, c.direccion]
-      .filter(Boolean)
-      .some((v) => String(v).toLowerCase().includes(q)),
-  )
+  const lista = !q
+    ? clientes.value
+    : clientes.value.filter((c) =>
+        [c.nombre, c.celular, c.ruc, c.email, c.direccion]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q)),
+      )
+
+  if (orden.value === 'az') {
+    return [...lista].sort((a, b) =>
+      a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
+    )
+  }
+  return lista
 })
 
 function limpiarBusqueda() {
@@ -124,6 +153,18 @@ async function crear() {
       </button>
       <button class="clear-btn" title="Limpiar" @click="limpiarBusqueda">
         <IconEraser :size="18" />
+      </button>
+    </div>
+
+    <div class="sort-row">
+      <button
+        class="ghost"
+        :title="orden === 'az' ? 'Volver al orden de la base de datos' : 'Ordenar de A-Z'"
+        @click="alternarOrden"
+      >
+        <IconArrowsSort v-if="orden === 'az'" :size="18" />
+        <IconSortAscendingLetters v-else :size="18" />
+        {{ orden === 'az' ? 'Orden original' : 'Ordenar A-Z' }}
       </button>
     </div>
 
@@ -227,7 +268,13 @@ async function crear() {
 
 .search-bar input:focus {
   outline: none;
-  border-color: hsla(160, 100%, 37%, 0.6);
+  border-color: hsl(var(--primary) / 0.6);
+}
+
+.sort-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
 }
 
 .search-btn,
@@ -247,8 +294,8 @@ async function crear() {
 }
 
 .search-btn:hover {
-  background: hsla(160, 100%, 37%, 0.15);
-  color: hsla(160, 100%, 30%, 1);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
 }
 
 .clear-btn:hover {
@@ -304,7 +351,7 @@ button {
 }
 
 button.primary {
-  background: hsla(160, 100%, 37%, 1);
+  background: var(--color-primary);
   color: var(--color-background);
 }
 
@@ -344,14 +391,14 @@ button.danger {
 }
 
 .card:hover {
-  border-color: hsla(160, 100%, 37%, 0.5);
+  border-color: hsl(var(--primary) / 0.5);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .card-name {
   font-size: 1.05rem;
   font-weight: 600;
-  color: hsla(160, 100%, 30%, 1);
+  color: var(--color-primary-dark);
 }
 
 .card-stats {
