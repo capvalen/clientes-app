@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import * as compiler from 'vue/compiler-sfc'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 import { cloudflare } from "@cloudflare/vite-plugin"
@@ -12,10 +13,20 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 // https://vite.dev/config/
 export default defineConfig({
 	plugins: [
-		vue(),
+		// Se pasa el compilador explícitamente para evitar el error
+		// "Cannot read properties of null (reading 'invalidateTypeCache')" que ocurre
+		// cuando un cambio de fichero llega antes de que el plugin lo resuelva.
+		vue({ compiler }),
 		vueDevTools(),
 		cloudflare()
 	],
+	server: {
+		watch: {
+			// Wrangler/Miniflare escribe estado y trazas en .wrangler durante el arranque;
+			// sin esto Vite lo trata como cambio de código y dispara HMR sin necesidad.
+			ignored: ['**/.wrangler/**']
+		}
+	},
 	define: {
 		// Versión de la app tomada de package.json (disponible como __APP_VERSION__)
 		__APP_VERSION__: JSON.stringify(pkg.version),

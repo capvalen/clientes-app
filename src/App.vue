@@ -11,8 +11,10 @@ import {
   IconLogout,
   IconMenu2,
   IconX,
+  IconId,
 } from '@tabler/icons-vue'
 import { isAuthenticated, clearToken, ensureSession } from './api/pocketbase'
+import { isDniAdmin } from './utils/session'
 import Toasts from './components/Toasts.vue'
 
 const route = useRoute()
@@ -23,11 +25,14 @@ const version = __APP_VERSION__
 
 const authed = ref(isAuthenticated())
 const menuOpen = ref(false)
+/** Módulo Proyecto DNIs: solo visible para cpariona / administrador */
+const dniAdmin = ref(isDniAdmin())
 
 watch(
   () => route.fullPath,
   () => {
     authed.value = isAuthenticated()
+    dniAdmin.value = isDniAdmin()
     // Cerrar el offcanvas al navegar
     menuOpen.value = false
   },
@@ -113,6 +118,7 @@ function logout() {
         <RouterLink to="/proyecto"><IconFolder :size="16" /> Proyectos</RouterLink>
         <RouterLink to="/servicio"><IconTools :size="16" /> Servicios</RouterLink>
         <RouterLink to="/cobro"><IconCash :size="16" /> Cobros</RouterLink>
+        <RouterLink v-if="dniAdmin" to="/dnis"><IconId :size="16" /> Proyecto DNIs</RouterLink>
         <RouterLink to="/opciones"><IconSettings :size="16" /> Opciones</RouterLink>
       </nav>
     </header>
@@ -155,6 +161,7 @@ function logout() {
           <RouterLink to="/proyecto"><IconFolder :size="18" /> Proyectos</RouterLink>
           <RouterLink to="/servicio"><IconTools :size="18" /> Servicios</RouterLink>
           <RouterLink to="/cobro"><IconCash :size="18" /> Cobros</RouterLink>
+          <RouterLink v-if="dniAdmin" to="/dnis"><IconId :size="18" /> Proyecto DNIs</RouterLink>
           <RouterLink to="/opciones"><IconSettings :size="18" /> Opciones</RouterLink>
         </nav>
 

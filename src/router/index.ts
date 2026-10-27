@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated } from '../api/pocketbase'
+import { isDniAdmin } from '../utils/session'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -56,6 +57,13 @@ const router = createRouter({
       name: 'opciones',
       component: () => import('../views/OpcionesView.vue'),
     },
+    {
+      path: '/dnis',
+      name: 'dnis',
+      // Módulo privado: solo para el usuario cpariona con perfil administrador
+      meta: { requiresDniAdmin: true },
+      component: () => import('../views/DniView.vue'),
+    },
   ],
 })
 
@@ -64,6 +72,9 @@ router.beforeEach((to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && isAuthenticated()) {
+    return { name: 'cliente' }
+  }
+  if (to.meta.requiresDniAdmin && !isDniAdmin()) {
     return { name: 'cliente' }
   }
 })
