@@ -16,10 +16,15 @@ watch(showMontos, (value) => {
 /** Texto mostrado cuando los montos están ocultos (para inputs/atributos, sin HTML) */
 export const MONTO_OCULTO = 'S/ •••'
 
+/** Formatea un monto en soles sin respetar el estado global de visibilidad (siempre visible) */
+export function montoVisible(value: number | string | null | undefined): string {
+  return `S/ ${Number(value || 0).toFixed(2)}`
+}
+
 /** Formatea un monto en soles respetando el estado global de visibilidad */
 export function monto(value: number | string | null | undefined): string {
   if (!showMontos.value) return MONTO_OCULTO
-  return `S/ ${Number(value || 0).toFixed(2)}`
+  return montoVisible(value)
 }
 
 /** Alterna la visibilidad de los montos en todo el sitio */

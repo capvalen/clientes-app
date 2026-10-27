@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { IconPlus, IconLoader, IconFolder, IconEye, IconEyeOff, IconUser } from '@tabler/icons-vue'
+import { IconPlus, IconLoader, IconFolder, IconEye, IconEyeOff, IconUser, IconFlag } from '@tabler/icons-vue'
 import {
   listProyectos,
   createProyecto,
@@ -46,6 +46,28 @@ const clienteNombre = computed(() => {
   const map = new Map(clientes.value.map((c) => [c.id, c.nombre]))
   return (id: string) => map.get(id) || '—'
 })
+
+// Filtro por cliente ('' = todos)
+const filtroCliente = ref('')
+
+// Filtro por estado (por defecto: activos)
+const filtroEstado = ref<Proyecto['estado']>('activo')
+
+/** Clientes ordenados alfabéticamente para el selector */
+const clientesOrdenados = computed(() =>
+  [...clientes.value].sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
+  ),
+)
+
+/** Proyectos visibles según el cliente y el estado seleccionados */
+const proyectosFiltrados = computed(() =>
+  proyectos.value.filter(
+    (p) =>
+      (!filtroCliente.value || p.cliente_id === filtroCliente.value) &&
+      p.estado === filtroEstado.value,
+  ),
+)
 
 async function load() {
   loading.value = true
@@ -238,15 +260,46 @@ async function guardar() {
 
     <p v-if="error" class="error">{{ error }}</p>
 
+    <div class="filter-bar">
+      <label class="filter-field">
+        <IconUser :size="16" />
+        Cliente
+        <select v-model="filtroCliente" aria-label="Filtrar proyectos por cliente">
+          <option value="">Todos los clientes</option>
+          <option v-for="c in clientesOrdenados" :key="c.id" :value="c.id">
+            {{ c.nombre }}
+          </option>
+        </select>
+      </label>
+      <label class="filter-field estado-field">
+        <IconFlag :size="16" />
+        Estado
+        <select v-model="filtroEstado" aria-label="Filtrar proyectos por estado">
+          <option value="activo">Activo</option>
+          <option value="completado">Completado</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+      </label>
+      <span class="filter-count">
+        {{ proyectosFiltrados.length }}
+        {{ proyectosFiltrados.length === 1 ? 'proyecto' : 'proyectos' }}
+      </span>
+    </div>
+
     <p v-if="loading" class="muted"><IconLoader :size="16" class="spin" /> Cargando…</p>
 
     <p v-else-if="proyectos.length === 0" class="muted">
       <IconFolder :size="16" /> No hay proyectos registrados.
     </p>
 
+    <div v-else-if="proyectosFiltrados.length === 0" class="empty-state">
+      <IconFolder :size="32" />
+      <span>No hay proyectos con los filtros seleccionados.</span>
+    </div>
+
     <div v-else class="cards">
       <RouterLink
-        v-for="p in proyectos"
+        v-for="p in proyectosFiltrados"
         :key="p.id"
         :to="`/proyecto/${p.id}`"
         class="card"
@@ -257,6 +310,15 @@ async function guardar() {
         <p v-if="p.descripcion" class="card-desc">{{ truncate(p.descripcion) }}</p>
         <div class="card-total">
           {{ monto(p.total) }}
+        </div>
+        <div class="card-progress">
+          <div class="progress-bar">
+            <div
+              class="progress-fill"
+              :style="{ width: `${Math.min(Number(p.progreso) || 0, 100)}%` }"
+            ></div>
+          </div>
+          <span class="progress-label">{{ Number(p.progreso) || 0 }}%</span>
         </div>
         <div class="card-bottom">
           <span class="cliente">
@@ -281,6 +343,54 @@ async function guardar() {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+/* Filtro por cliente */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-2);
+}
+
+.filter-field select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.estado-field select {
+  min-width: 150px;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--color-text-2);
+}
+
+/* Estado vacío al filtrar */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-2);
 }
 
 .form {
@@ -401,6 +511,68 @@ button.ghost {
   font-size: 1.5rem;
   font-weight: 700;
   color: hsl(160, 3.8%, 31%);
+}
+
+/* Barra de progreso con brillo animado en bucle */
+.card-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-background-mute);
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: relative;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  overflow: hidden;
+  transition: width 0.4s ease;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: progress-shimmer 3s ease-in-out infinite;
+}
+
+.progress-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-2);
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+@keyframes progress-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill::after {
+    animation: none;
+  }
 }
 
 .card-bottom {

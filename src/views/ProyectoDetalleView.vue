@@ -288,7 +288,7 @@ const comprobanteFiles = computed(() =>
 
 // Filtro: mostrar solo deudas pendientes
 type FiltroPagos = 'todos' | 'deudas'
-const filtroPagos = ref<FiltroPagos>('todos')
+const filtroPagos = ref<FiltroPagos>('deudas')
 
 function toggleFiltroDeudas() {
   filtroPagos.value = filtroPagos.value === 'deudas' ? 'todos' : 'deudas'
@@ -895,6 +895,7 @@ onMounted(load)
               class="badge"
               :style="{ color: pagoInfo(pago.estado).color, background: pagoInfo(pago.estado).bg }"
             >
+              <IconCheck v-if="pago.estado === 'pagado'" :size="12" />
               {{ pagoInfo(pago.estado).label }}
             </span>
             <button
@@ -995,6 +996,7 @@ onMounted(load)
               <div class="ticket-sep"></div>
 
               <div class="ticket-estado-label" :class="{ deuda: selectedPago.que_es === 'deuda' }">
+                <IconCheck v-if="selectedPago.que_es !== 'deuda'" :size="14" />
                 {{ selectedPago.que_es === 'deuda' ? 'Adeuda' : 'Pagado' }}
               </div>
               <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
@@ -1023,6 +1025,7 @@ onMounted(load)
                   class="badge"
                   :style="{ color: pagoInfo(selectedPago.estado).color, background: pagoInfo(selectedPago.estado).bg }"
                 >
+                  <IconCheck v-if="selectedPago.estado === 'pagado'" :size="12" />
                   {{ pagoInfo(selectedPago.estado).label }}
                 </span>
               </div>
@@ -1702,6 +1705,10 @@ button.danger:hover {
 }
 
 .ticket-estado-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
   text-align: center;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1767,6 +1774,7 @@ button.danger:hover {
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 0.25rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;

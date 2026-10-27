@@ -9,12 +9,14 @@ import {
   IconCamera,
   IconCash,
   IconCheck,
+  IconClock,
   IconCoin,
   IconDeviceIpadHorizontalUp,
   IconDeviceMobile,
   IconEdit,
   IconEye,
   IconEyeOff,
+  IconFilter,
   IconLoader,
   IconNotes,
   IconPaperclip,
@@ -242,6 +244,23 @@ const capturando = ref(false)
 /** Comprobantes adjuntos del pago seleccionado (nombre + URL) */
 const comprobanteFiles = computed(() =>
   selectedPago.value ? getComprobanteFiles(selectedPago.value) : [],
+)
+
+// Filtro: mostrar solo deudas pendientes
+type FiltroPagos = 'todos' | 'deudas'
+const filtroPagos = ref<FiltroPagos>('deudas')
+
+function toggleFiltroDeudas() {
+  filtroPagos.value = filtroPagos.value === 'deudas' ? 'todos' : 'deudas'
+}
+
+const pagosPendientes = computed(() =>
+  pagos.value.filter((p) => p.estado === 'pendiente'),
+)
+
+/** Lista mostrada según el filtro activo (solo deudas o todos) */
+const pagosFiltrados = computed(() =>
+  filtroPagos.value === 'deudas' ? pagosPendientes.value : pagos.value,
 )
 
 // Cronograma de deudas
@@ -628,6 +647,8 @@ onMounted(load)
           <div><dt>Estado</dt><dd>{{ capitalize(servicio.estado) }}</dd></div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(servicio.fecha_inicio) }}</dd></div>
           <div><dt>Fecha final</dt><dd>{{ formatDate(servicio.fecha_final) }}</dd></div>
+        </dl>
+        <dl class="fields fields-2col">
           <div><dt>Descripción</dt><dd>{{ servicio.descripcion || '—' }}</dd></div>
           <div><dt>Observaciones</dt><dd>{{ servicio.observaciones || '—' }}</dd></div>
         </dl>
@@ -706,6 +727,20 @@ onMounted(load)
         <div class="tab-head">
           <h2><IconWallet :size="18" /> Cuotas</h2>
           <div class="tab-actions">
+            <button
+              v-if="pagos.length > 0"
+              class="ghost"
+              :class="{ active: filtroPagos === 'deudas' }"
+              :title="filtroPagos === 'deudas' ? 'Ver todos los registros' : 'Ver solo deudas pendientes'"
+              @click="toggleFiltroDeudas"
+            >
+              <IconFilter :size="16" />
+              {{
+                filtroPagos === 'deudas'
+                  ? `Solo deudas (${pagosPendientes.length})`
+                  : `Pagos (${pagos.length})`
+              }}
+            </button>
             <button class="ghost" @click="openDeudaForm">
               <IconPlus :size="16" /> Agregar deuda
             </button>
@@ -780,9 +815,12 @@ onMounted(load)
         </Modal>
 
         <p v-if="pagos.length === 0" class="muted">Sin pagos registrados.</p>
+        <p v-else-if="pagosFiltrados.length === 0" class="muted">
+          <IconClock :size="16" /> Sin deudas pendientes.
+        </p>
 
         <ul v-else class="list">
-          <li v-for="pago in pagos" :key="pago.id">
+          <li v-for="pago in pagosFiltrados" :key="pago.id">
             <div class="pago-wrap">
               <button class="pago-item" type="button" @click="openPagoDetalle(pago)">
                 <strong class="monto">{{ monto(pago.monto) }}</strong>
@@ -822,6 +860,7 @@ onMounted(load)
               class="badge"
               :style="{ color: pagoInfo(pago.estado).color, background: pagoInfo(pago.estado).bg }"
             >
+              <IconCheck v-if="pago.estado === 'pagado'" :size="12" />
               {{ pagoInfo(pago.estado).label }}
             </span>
             <button
@@ -922,6 +961,7 @@ onMounted(load)
               <div class="ticket-sep"></div>
 
               <div class="ticket-estado-label" :class="{ deuda: selectedPago.que_es === 'deuda' }">
+                <IconCheck v-if="selectedPago.que_es !== 'deuda'" :size="14" />
                 {{ selectedPago.que_es === 'deuda' ? 'Adeuda' : 'Pagado' }}
               </div>
               <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
@@ -950,6 +990,7 @@ onMounted(load)
                   class="badge"
                   :style="{ color: pagoInfo(selectedPago.estado).color, background: pagoInfo(selectedPago.estado).bg }"
                 >
+                  <IconCheck v-if="selectedPago.estado === 'pagado'" :size="12" />
                   {{ pagoInfo(selectedPago.estado).label }}
                 </span>
               </div>
@@ -1139,6 +1180,13 @@ onMounted(load)
   flex-wrap: wrap;
 }
 
+.tab-actions button.active {
+  border-color: hsl(var(--primary) / 0.6);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -1224,6 +1272,18 @@ button.danger:hover {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
   margin: 0;
+}
+
+/* Fila nueva: Descripción | Observaciones en 2 columnas */
+.fields.fields-2col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+@media (max-width: 640px) {
+  .fields.fields-2col {
+    grid-template-columns: 1fr;
+  }
 }
 
 .fields dt {
@@ -1543,6 +1603,10 @@ button.danger:hover {
 }
 
 .ticket-estado-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
   text-align: center;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1602,6 +1666,7 @@ button.danger:hover {
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 0.25rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;

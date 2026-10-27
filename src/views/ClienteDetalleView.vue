@@ -53,10 +53,10 @@ import {
   isMasterUnlocked,
   unlockMaster,
 } from '../utils/crypto'
-import { truncate } from '../utils/format'
+import { formatDate, truncate } from '../utils/format'
 import { showToast } from '../utils/toast'
-import { PERIOCIDAD_LABEL, calcularCuotas, sumarPeriocidad } from '../utils/cuotas'
-import { showMontos, monto, toggleMontos } from '../utils/montos'
+import { PERIOCIDAD_LABEL, fechasCuotas } from '../utils/cuotas'
+import { showMontos, monto, montoVisible, toggleMontos } from '../utils/montos'
 import Modal from '../components/Modal.vue'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 
@@ -154,10 +154,26 @@ const servicioForm = ref({
   total: '',
   periocidad: 'mensual',
   duracion_dias: '0',
+  num_cuotas: '1',
   estado: 'activo',
   fecha_inicio: '',
   fecha_final: '',
   observaciones: '',
+})
+
+/** Fechas de las cuotas que se crearán al guardar (cuota 1 = fecha inicio, 2 = +1 periocidad, …) */
+const cuotasPreview = computed(() =>
+  fechasCuotas(
+    servicioForm.value.fecha_inicio,
+    servicioForm.value.periocidad as Servicio['periocidad'],
+    Number(servicioForm.value.num_cuotas) || 0,
+  ),
+)
+
+/** Fecha final del servicio: la fecha de la última cuota */
+const fechaFinalPreview = computed(() => {
+  const fechas = cuotasPreview.value
+  return fechas.length > 0 ? fechas[fechas.length - 1]! : ''
 })
 
 // Edición de servicio
@@ -346,34 +362,39 @@ function openServicioForm() {
     total: '',
     periocidad: 'mensual',
     duracion_dias: '0',
+    num_cuotas: '1',
     estado: 'activo',
     fecha_inicio: new Date().toISOString().slice(0, 10),
     fecha_final: '',
     observaciones: '',
   }
-  // Calcular la fecha final automáticamente
-  servicioForm.value.fecha_final = sumarPeriocidad(
-    servicioForm.value.fecha_inicio,
-    servicioForm.value.periocidad as Servicio['periocidad'],
-  )
+  actualizarFechaFinal()
   showServicioForm.value = true
 }
 
-// Si cambia la periocidad, fecha de inicio o total, recalcular la fecha final
+/** Mantiene fecha_final sincronizada con la fecha de la última cuota */
+function actualizarFechaFinal() {
+  servicioForm.value.fecha_final = fechaFinalPreview.value
+}
+
+// Si cambia la fecha de inicio, la periocidad o el número de cuotas, recalcular la fecha final
 watch(
-  [() => servicioForm.value.fecha_inicio, () => servicioForm.value.periocidad, () => servicioForm.value.total],
-  () => {
-    if (servicioForm.value.fecha_inicio) {
-      servicioForm.value.fecha_final = sumarPeriocidad(
-        servicioForm.value.fecha_inicio,
-        servicioForm.value.periocidad as Servicio['periocidad'],
-      )
-    }
-  },
+  [
+    () => servicioForm.value.fecha_inicio,
+    () => servicioForm.value.periocidad,
+    () => servicioForm.value.num_cuotas,
+  ],
+  actualizarFechaFinal,
 )
 
 async function guardarServicio() {
   if (!cliente.value || !servicioForm.value.servicio) return
+  const fechas = cuotasPreview.value
+  if (fechas.length === 0) {
+    error.value = 'Indica al menos 1 cuota.'
+    return
+  }
+  const fechaFinal = fechas[fechas.length - 1] ?? ''
   saving.value = true
   error.value = ''
   try {
@@ -386,16 +407,11 @@ async function guardarServicio() {
       duracion_dias: Number(servicioForm.value.duracion_dias) || 0,
       estado: servicioForm.value.estado as Servicio['estado'],
       fecha_inicio: servicioForm.value.fecha_inicio,
-      fecha_final: servicioForm.value.fecha_final,
+      fecha_final: fechaFinal,
       observaciones: servicioForm.value.observaciones,
     })
 
-    // Crear los pagos pendientes entre el período (mismo monto en cada fecha)
-    const fechas = calcularCuotas(
-      servicio.fecha_inicio,
-      servicio.fecha_final,
-      servicio.periocidad,
-    )
+    // Crear una cuota pendiente por cada fecha calculada (mismo monto en cada una)
     await crearPagosPendientes(servicio.id, fechas, Number(servicio.total) || 0)
 
     showServicioForm.value = false
@@ -1531,16 +1547,46 @@ async function saveSecretoEdit() {
               </label>
               <label>
                 Fecha inicio
-                <input v-model="servicioForm.fecha_inicio" type="date" />
+                <input v-model="servicioForm.fecha_inicio" type="date" required />
               </label>
               <label>
-                Fecha final
-                <input v-model="servicioForm.fecha_final" type="date" />
+                Num. cuotas *
+                <input v-model="servicioForm.num_cuotas" type="number" min="1" step="1" required />
               </label>
-              <label class="full">
-                Observaciones
-                <textarea v-model="servicioForm.observaciones" rows="2"></textarea>
-              </label>
+            </div>
+
+            <!-- Vista previa de las cuotas que se van a crear -->
+            <div class="cuotas-preview">
+              <div class="cuotas-head">
+                <strong>
+                  {{
+                    cuotasPreview.length === 1
+                      ? 'Se creará 1 cuota'
+                      : `Se crearán ${cuotasPreview.length} cuotas`
+                  }}
+                </strong>
+                <span v-if="cuotasPreview.length > 0">
+                  Fecha final: {{ formatDate(fechaFinalPreview) }}
+                </span>
+              </div>
+
+              <p v-if="cuotasPreview.length === 0" class="muted">
+                Indica una fecha de inicio y al menos 1 cuota.
+              </p>
+
+              <template v-else>
+                <ul class="cuotas-list">
+                  <li v-for="(fecha, i) in cuotasPreview" :key="`${i}-${fecha}`">
+                    <span class="cuota-num">Cuota {{ i + 1 }}</span>
+                    <span class="cuota-fecha">{{ formatDate(fecha) }}</span>
+                    <span class="cuota-monto">{{ montoVisible(Number(servicioForm.total) || 0) }}</span>
+                  </li>
+                </ul>
+                <div class="cuotas-total">
+                  <strong>Total a cobrar</strong>
+                  <strong>{{ montoVisible((Number(servicioForm.total) || 0) * cuotasPreview.length) }}</strong>
+                </div>
+              </template>
             </div>
 
             <p v-if="error" class="error">{{ error }}</p>
@@ -1789,10 +1835,42 @@ async function saveSecretoEdit() {
 }
 
 .progress-fill {
+  position: relative;
   height: 100%;
   border-radius: 999px;
   background: var(--color-primary);
-  transition: width 0.3s ease;
+  overflow: hidden;
+  transition: width 0.4s ease;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: progress-shimmer 3s ease-in-out infinite;
+}
+
+@keyframes progress-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill::after {
+    animation: none;
+  }
 }
 
 .progress-label {
@@ -1880,6 +1958,82 @@ async function saveSecretoEdit() {
 
 .grid .full {
   grid-column: 1 / -1;
+}
+
+/* Vista previa de cuotas en el formulario de nuevo servicio */
+.cuotas-preview {
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  padding: 0.75rem;
+  background: var(--color-background);
+}
+
+.cuotas-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.cuotas-head span {
+  color: var(--color-text-2);
+}
+
+.cuotas-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.cuotas-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+
+.cuotas-list li:last-child {
+  border-bottom: none;
+}
+
+.cuota-num {
+  flex: 1;
+  font-weight: 600;
+  color: var(--color-text-2);
+}
+
+.cuota-fecha {
+  flex: 1;
+}
+
+.cuota-monto {
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+.cuotas-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 2px solid var(--color-border);
+  font-size: 0.9rem;
+}
+
+.cuotas-total strong:last-child {
+  color: var(--color-primary-dark);
 }
 
 label {

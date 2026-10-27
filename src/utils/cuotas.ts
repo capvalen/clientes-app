@@ -8,6 +8,27 @@ function toLocalISODate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/** Avanza la fecha indicada según la periocidad (muta el Date) */
+function avanzarPeriocidad(d: Date, periocidad: Periocidad): void {
+  switch (periocidad) {
+    case 'diario':
+      d.setDate(d.getDate() + 1)
+      break
+    case 'semanal':
+      d.setDate(d.getDate() + 7)
+      break
+    case 'mensual':
+      d.setMonth(d.getMonth() + 1)
+      break
+    case 'bianual':
+      d.setMonth(d.getMonth() + 6)
+      break
+    case 'anual':
+      d.setFullYear(d.getFullYear() + 1)
+      break
+  }
+}
+
 /**
  * Calcula las fechas de cuota de un servicio según su periocidad.
  * Parte de fecha_inicio y suma según la periocidad (diario +1d, semanal +7d,
@@ -32,27 +53,36 @@ export function calcularCuotas(
   for (let i = 0; i < 1000; i++) {
     if (fin && actual > fin) break
     cuotas.push(toLocalISODate(actual))
-
-    switch (periocidad) {
-      case 'diario':
-        actual.setDate(actual.getDate() + 1)
-        break
-      case 'semanal':
-        actual.setDate(actual.getDate() + 7)
-        break
-      case 'mensual':
-        actual.setMonth(actual.getMonth() + 1)
-        break
-      case 'bianual':
-        actual.setMonth(actual.getMonth() + 6)
-        break
-      case 'anual':
-        actual.setFullYear(actual.getFullYear() + 1)
-        break
-    }
+    avanzarPeriocidad(actual, periocidad)
   }
 
   return cuotas
+}
+
+/**
+ * Genera exactamente `cantidad` fechas de cuota partiendo de fecha_inicio.
+ * La cuota 1 cae en fecha_inicio, la 2 en fecha_inicio + 1 periocidad, etc.
+ */
+export function fechasCuotas(
+  fechaInicio: string,
+  periocidad: Periocidad,
+  cantidad: number,
+): string[] {
+  if (!fechaInicio) return []
+  const total = Math.floor(Number(cantidad))
+  if (!Number.isFinite(total) || total <= 0) return []
+
+  const actual = new Date(`${fechaInicio.slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(actual.getTime())) return []
+
+  const fechas: string[] = []
+  // Límite de seguridad: máx 1000 cuotas
+  for (let i = 0; i < Math.min(total, 1000); i++) {
+    fechas.push(toLocalISODate(actual))
+    avanzarPeriocidad(actual, periocidad)
+  }
+
+  return fechas
 }
 
 export const PERIOCIDAD_LABEL: Record<Periocidad, string> = {
@@ -67,22 +97,6 @@ export const PERIOCIDAD_LABEL: Record<Periocidad, string> = {
 export function sumarPeriocidad(fecha: string, periocidad: Periocidad): string {
   const d = new Date(`${fecha.slice(0, 10)}T00:00:00`)
   if (Number.isNaN(d.getTime())) return fecha
-  switch (periocidad) {
-    case 'diario':
-      d.setDate(d.getDate() + 1)
-      break
-    case 'semanal':
-      d.setDate(d.getDate() + 7)
-      break
-    case 'mensual':
-      d.setMonth(d.getMonth() + 1)
-      break
-    case 'bianual':
-      d.setMonth(d.getMonth() + 6)
-      break
-    case 'anual':
-      d.setFullYear(d.getFullYear() + 1)
-      break
-  }
+  avanzarPeriocidad(d, periocidad)
   return toLocalISODate(d)
 }

@@ -21,6 +21,7 @@ import {
   IconPhone,
   IconSearch,
   IconTools,
+  IconUser,
   IconWallet,
 } from '@tabler/icons-vue'
 import {
@@ -157,6 +158,11 @@ const cobrosVencidos = computed(() =>
   ordenar(pagosFiltrados.value.filter((p) => p.estado === 'pendiente' && ym(p.fecha) < mesActual)),
 )
 
+/** Total de cobros realmente visibles: vencidos + este mes + próximo mes */
+const cobrosVisibles = computed(
+  () => cobrosVencidos.value.length + cobrosEsteMes.value.length + cobrosProximoMes.value.length,
+)
+
 /** Suma de los montos pendientes (deudas) de una lista */
 function totalPendiente(lista: Pago[]): number {
   return lista
@@ -181,22 +187,35 @@ const terminos = computed(() =>
   normalizar(busqueda.value).split(/\s+/).filter(Boolean),
 )
 
-/** Texto indexable de un cobro: entidad, descripción y cliente */
+/** Texto indexable de un cobro: entidad y descripción (sin cliente) */
 function textoBuscable(p: Pago): string {
-  return normalizar(`${entidadDe(p)?.nombre ?? ''} ${p.observaciones ?? ''} ${clienteNombreEntidad(p)}`)
+  return normalizar(`${entidadDe(p)?.nombre ?? ''} ${p.observaciones ?? ''}`)
 }
 
-/** Pagos que coinciden con todos los términos de búsqueda */
+// ---- Filtro por cliente ----
+const filtroCliente = ref('')
+
+/** Clientes ordenados alfabéticamente para el selector */
+const clientesOrdenados = computed(() =>
+  [...clientes.value].sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
+  ),
+)
+
+/** Pagos que coinciden con el cliente seleccionado y con todos los términos de búsqueda */
 const pagosFiltrados = computed(() => {
+  const clienteId = filtroCliente.value
   const t = terminos.value
-  if (t.length === 0) return pagos.value
   return pagos.value.filter((p) => {
+    if (clienteId && entidadDe(p)?.cliente_id !== clienteId) return false
+    if (t.length === 0) return true
     const texto = textoBuscable(p)
     return t.every((term) => texto.includes(term))
   })
 })
 
 const hayBusqueda = computed(() => terminos.value.length > 0)
+const hayFiltro = computed(() => hayBusqueda.value || filtroCliente.value !== '')
 
 function limpiarBusqueda() {
   busqueda.value = ''
@@ -303,7 +322,7 @@ onMounted(load)
       <input
         v-model="busqueda"
         type="text"
-        placeholder="Buscar por proyecto, servicio, descripción o cliente…"
+        placeholder="Buscar por proyecto, servicio o descripción…"
         aria-label="Buscar cobros"
       />
       <button class="search-btn" type="button" title="Buscar" @click="busqueda = busqueda.trim()">
@@ -314,16 +333,36 @@ onMounted(load)
       </button>
     </div>
 
+    <!-- Filtro por cliente -->
+    <div class="filter-bar">
+      <label class="filter-field">
+        <IconUser :size="16" />
+        Cliente
+        <select v-model="filtroCliente" aria-label="Filtrar cobros por cliente">
+          <option value="">Todos los clientes</option>
+          <option v-for="c in clientesOrdenados" :key="c.id" :value="c.id">
+            {{ c.nombre }}
+          </option>
+        </select>
+      </label>
+      <span class="filter-count">
+        {{ cobrosVisibles }}
+        {{ cobrosVisibles === 1 ? 'cobro' : 'cobros' }}
+      </span>
+    </div>
+
     <p v-if="loading" class="muted"><IconLoader :size="16" class="spin" /> Cargando…</p>
 
     <p v-else-if="error" class="error">{{ error }}</p>
 
-    <p
-      v-else-if="hayBusqueda && pagosFiltrados.length === 0"
-      class="muted"
-    >
+    <p v-else-if="hayFiltro && cobrosVisibles === 0 && hayBusqueda" class="muted">
       <IconSearch :size="16" /> Sin resultados para “{{ busqueda }}”.
     </p>
+
+    <div v-else-if="hayFiltro && cobrosVisibles === 0" class="empty-state">
+      <IconCash :size="32" />
+      <span>Este cliente no tiene pagos pendientes.</span>
+    </div>
 
     <template v-else>
       <p v-if="error" class="error">{{ error }}</p>
@@ -393,7 +432,7 @@ onMounted(load)
       </section>
 
       <!-- Cobros de este mes -->
-      <section v-if="!hayBusqueda || cobrosEsteMes.length > 0" class="card">
+      <section v-if="!hayFiltro || cobrosEsteMes.length > 0" class="card">
         <div class="tab-head">
           <h2>Cobros de este mes</h2>
           <span class="total-pend">Por cobrar: {{ monto(totalPendiente(cobrosEsteMes)) }}</span>
@@ -455,7 +494,7 @@ onMounted(load)
       </section>
 
       <!-- Cobros del próximo mes -->
-      <section v-if="!hayBusqueda || cobrosProximoMes.length > 0" class="card">
+      <section v-if="!hayFiltro || cobrosProximoMes.length > 0" class="card">
         <div class="tab-head">
           <h2>Del próximo mes</h2>
           <span class="total-pend">Por cobrar: {{ monto(totalPendiente(cobrosProximoMes)) }}</span>
@@ -633,6 +672,50 @@ onMounted(load)
 .clear-btn:hover {
   background: rgba(229, 72, 77, 0.1);
   color: #e5484d;
+}
+
+/* Filtro por cliente */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-2);
+}
+
+.filter-field select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--color-text-2);
+}
+
+/* Estado vacío al filtrar por cliente */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-2);
 }
 
 .card {
@@ -860,7 +943,8 @@ label {
   font-size: 0.85rem;
 }
 
-input {
+input,
+select {
   padding: 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: 0.25rem;

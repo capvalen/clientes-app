@@ -220,18 +220,28 @@ async function crear() {
         class="card"
       >
         <div class="card-name">{{ cliente.nombre }}</div>
-        <div class="card-stats">
-          <div class="stats-row">
-            <span class="stat">
+        <div
+          v-if="
+            countProyectos(cliente.id) > 0 ||
+            countServicios(cliente.id) > 0 ||
+            countSocios(cliente) > 0
+          "
+          class="card-stats"
+        >
+          <div
+            v-if="countProyectos(cliente.id) > 0 || countServicios(cliente.id) > 0"
+            class="stats-row"
+          >
+            <span v-if="countProyectos(cliente.id) > 0" class="stat">
               <IconFolder :size="16" />
               {{ countProyectos(cliente.id) }} {{ countProyectos(cliente.id) === 1 ? 'proyecto' : 'proyectos' }}
             </span>
-            <span class="stat">
+            <span v-if="countServicios(cliente.id) > 0" class="stat">
               <IconTool :size="16" />
               {{ countServicios(cliente.id) }} {{ countServicios(cliente.id) === 1 ? 'servicio' : 'servicios' }}
             </span>
           </div>
-          <span class="stat">
+          <span v-if="countSocios(cliente) > 0" class="stat">
             <IconUsers :size="16" />
             {{ countSocios(cliente) }} {{ countSocios(cliente) === 1 ? 'socio' : 'socios' }}
           </span>
