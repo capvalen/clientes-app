@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconLogin, IconLoader, IconBrush } from '@tabler/icons-vue'
+import { IconLogin, IconLoader } from '@tabler/icons-vue'
 import { login } from '../api/pocketbase'
 
 const route = useRoute()
@@ -33,14 +33,14 @@ async function submit() {
     <form class="login-card" @submit.prevent="submit">
       <div class="login-brand">
         <div class="brand-icon">
-          <IconBrush :size="28" />
+          <img src="/icon-512.png" alt="Deal Desk" />
         </div>
         <h1>Deal Desk</h1>
-        <p class="subtitle">Gestión de clientes</p>
+        <p class="subtitle">Gestión de contratos y proyectos</p>
       </div>
 
       <div class="form-group">
-        <label for="identity">Email o usuario</label>
+        <label for="identity">Correo</label>
         <div class="input-wrapper">
           <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -69,7 +69,7 @@ async function submit() {
         {{ loading ? 'Ingresando…' : 'Entrar' }}
       </button>
 
-      <p class="footer-text">Sistema de gestión interna © {{ new Date().getFullYear() }}</p>
+      <p class="footer-text">Sistema de Mesa de contratos © {{ new Date().getFullYear() }}</p>
     </form>
   </main>
 </template>
@@ -125,17 +125,19 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  color: white;
-  box-shadow: 0 4px 14px hsl(var(--primary) / 0.3);
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
 }
 
-.brand-icon svg {
-  width: 28px;
-  height: 28px;
+.brand-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .login-brand h1 {
@@ -210,6 +212,8 @@ input:focus {
 }
 
 button {
+  position: relative;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -217,19 +221,38 @@ button {
   padding: 0.75rem 1rem;
   border: 0;
   border-radius: 0.5rem;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  background: linear-gradient(135deg, #4b5563 0%, #1f2937 100%);
   color: white;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.35);
   letter-spacing: 0.01em;
+}
+
+/* Brillo que recorre el botón */
+button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.38) 50%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  animation: boton-brillo 3.6s ease-in-out infinite;
+  pointer-events: none;
 }
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px hsl(var(--primary) / 0.4);
+  box-shadow: 0 4px 16px rgba(17, 24, 39, 0.5);
 }
 
 button:active:not(:disabled) {
@@ -239,6 +262,26 @@ button:active:not(:disabled) {
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+button:disabled::before {
+  animation: none;
+}
+
+@keyframes boton-brillo {
+  0% {
+    left: -75%;
+  }
+  50%,
+  100% {
+    left: 125%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button::before {
+    animation: none;
+  }
 }
 
 .error {
@@ -278,14 +321,9 @@ button:disabled {
   }
 
   .brand-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-  }
-
-  .brand-icon svg {
-    width: 24px;
-    height: 24px;
+    width: 52px;
+    height: 52px;
+    border-radius: 13px;
   }
 }
 </style>

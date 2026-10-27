@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   IconId,
   IconBolt,
@@ -11,6 +11,7 @@ import {
   IconUserQuestion,
   IconCopy,
   IconTrash,
+  IconEraser,
 } from '@tabler/icons-vue'
 import {
   alimentarDni,
@@ -28,6 +29,18 @@ import { formatFechaHora } from '../utils/format'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 
 const form = ref({ dni: '', apellido: '', nombre: '' })
+const dniInput = ref<HTMLInputElement | null>(null)
+
+/** ¿Los tres inputs están vacíos? */
+const formVacio = computed(
+  () => !form.value.dni && !form.value.apellido && !form.value.nombre,
+)
+
+/** Limpia todos los inputs del formulario */
+function limpiarFormulario() {
+  form.value = { dni: '', apellido: '', nombre: '' }
+  dniInput.value?.focus()
+}
 
 const cargandoAuto = ref(false)
 const cargandoManual = ref(false)
@@ -253,15 +266,28 @@ onMounted(() => {
         <div class="grid">
           <label>
             DNI *
-            <input
-              v-model="form.dni"
-              type="text"
-              inputmode="numeric"
-              autocomplete="off"
-              maxlength="8"
-              required
-              @input="limpiarDni"
-            />
+            <div class="input-with-action">
+              <input
+                ref="dniInput"
+                v-model="form.dni"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength="8"
+                required
+                @input="limpiarDni"
+              />
+              <button
+                type="button"
+                class="clear-form"
+                title="Limpiar todos los campos"
+                aria-label="Limpiar todos los campos"
+                :disabled="formVacio"
+                @click="limpiarFormulario"
+              >
+                <IconEraser :size="15" />
+              </button>
+            </div>
           </label>
           <label>
             Apellidos *
@@ -507,6 +533,46 @@ input {
 input:focus {
   outline: none;
   border-color: hsl(var(--primary) / 0.6);
+}
+
+/* Input del DNI con su botón para limpiar todo el formulario */
+.input-with-action {
+  display: flex;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+
+.input-with-action input {
+  flex: 1;
+  min-width: 0;
+}
+
+.clear-form {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  background: var(--color-background-soft);
+  color: var(--color-text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.clear-form:hover:not(:disabled) {
+  border-color: rgba(229, 72, 77, 0.4);
+  background: rgba(229, 72, 77, 0.1);
+  color: #e5484d;
+}
+
+.clear-form:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .row {
