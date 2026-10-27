@@ -38,6 +38,13 @@ watch(menuOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
+/** En móvil/tablet el logo de la barra superior también abre el menú flotante */
+function abrirMenuFlotante() {
+  if (window.matchMedia('(max-width: 1023px)').matches) {
+    menuOpen.value = true
+  }
+}
+
 // La sesión dejó de ser válida (token expirado y sin poder refrescar)
 function onAuthExpired() {
   authed.value = false
@@ -73,29 +80,34 @@ function logout() {
   <template v-if="route.name !== 'login'">
     <!-- Barra superior horizontal (100% del ancho) -->
     <nav class="topbar">
-      <div class="brand">
-        <img src="/infocat_transparente.png" alt="Deal Desk" class="brand-logo" />
-        <strong>Deal Desk - Gestión de Mesa de contratos</strong>
+      <div class="topbar-inner">
+        <div class="brand" @click="abrirMenuFlotante">
+          <img src="/infocat_transparente.png" alt="Deal Desk" class="brand-logo" />
+          <strong>Deal Desk - Gestión de Mesa de contratos</strong>
+        </div>
+
+        <!-- Hamburguesa (solo móvil/tablet) -->
+        <button
+          class="burger"
+          type="button"
+          aria-label="Abrir menú"
+          :aria-expanded="menuOpen"
+          @click="menuOpen = true"
+        >
+          <IconMenu2 :size="24" />
+        </button>
+
+        <button v-if="authed" class="logout topbar-logout" @click="logout">
+          <IconLogout :size="16" /> Salir
+        </button>
       </div>
-
-      <!-- Hamburguesa (solo móvil/tablet) -->
-      <button
-        class="burger"
-        type="button"
-        aria-label="Abrir menú"
-        :aria-expanded="menuOpen"
-        @click="menuOpen = true"
-      >
-        <IconMenu2 :size="24" />
-      </button>
-
-      <button v-if="authed" class="logout topbar-logout" @click="logout">
-        <IconLogout :size="16" /> Salir
-      </button>
     </nav>
+  </template>
 
+  <!-- Contenedor del contenido: centrado con ancho máximo en escritorio -->
+  <div class="content" :class="{ 'content--app': route.name !== 'login' }">
     <!-- Menú vertical (sidebar en escritorio) -->
-    <header class="sidebar">
+    <header v-if="route.name !== 'login'" class="sidebar">
       <nav class="menu">
         <RouterLink to="/cliente"><IconUsers :size="16" /> Clientes</RouterLink>
         <RouterLink to="/proyecto"><IconFolder :size="16" /> Proyectos</RouterLink>
@@ -105,6 +117,22 @@ function logout() {
       </nav>
     </header>
 
+    <RouterView />
+
+    <footer v-if="route.name !== 'login'" class="app-footer">
+      <span class="footer-item">
+        <IconDeviceDesktop :size="16" /> v{{ version }}
+      </span>
+      <span class="footer-item">
+        Desarrollado por:
+        <a href="https://infocatsoluciones.com" target="_blank" rel="noopener">
+          Infocat Soluciones
+        </a>
+      </span>
+    </footer>
+  </div>
+
+  <template v-if="route.name !== 'login'">
     <!-- Offcanvas (móvil/tablet) -->
     <Transition name="fade">
       <div v-if="menuOpen" class="offcanvas-backdrop" @click="menuOpen = false"></div>
@@ -137,24 +165,16 @@ function logout() {
     </Transition>
   </template>
 
-  <RouterView />
-
-  <footer v-if="route.name !== 'login'" class="app-footer">
-    <span class="footer-item">
-      <IconDeviceDesktop :size="16" /> v{{ version }}
-    </span>
-    <span class="footer-item">
-      Desarrollado por:
-      <a href="https://infocatsoluciones.com" target="_blank" rel="noopener">
-        Infocat Soluciones
-      </a>
-    </span>
-  </footer>
-
   <Toasts />
 </template>
 
 <style scoped>
+/* Contenedor del contenido: centrado con ancho máximo en escritorio
+   (la topbar queda fuera y ocupa el 100% del ancho) */
+.content {
+  width: 100%;
+}
+
 /* Pie de página con la versión y el crédito */
 .app-footer {
   display: flex;
@@ -189,17 +209,24 @@ function logout() {
   text-decoration: underline;
 }
 
-/* Barra superior horizontal */
+/* Barra superior horizontal (fondo a todo el ancho) */
 .topbar {
+  width: 100%;
+  border-bottom: 1px solid var(--color-border);
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* Contenido de la barra: alineado con el ancho del contenido de la página */
+.topbar-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--color-border);
-  background: #ffffff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .brand {
@@ -215,6 +242,13 @@ function logout() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* En móvil/tablet el logo abre el menú flotante */
+@media (max-width: 1023px) {
+  .topbar .brand {
+    cursor: pointer;
+  }
 }
 
 .brand-logo {
@@ -384,9 +418,18 @@ function logout() {
 }
 
 @media (min-width: 1024px) {
-  .topbar {
-    grid-column: 1 / -1;
-    padding: 0.75rem 1.5rem;
+  /* El contenido (sidebar + vista + footer) se mantiene centrado */
+  .content--app {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+  }
+
+  .topbar-inner {
+    padding: 0.75rem 2rem;
   }
 
   .burger {

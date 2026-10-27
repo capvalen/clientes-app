@@ -633,6 +633,17 @@ async function borrarNota(nota: NotaRegistro) {
   }
 }
 
+/** Copia al portapapeles solo el dato de la nota (sin el título) */
+async function copiarNota(nota: NotaRegistro) {
+  if (!nota.dato) return
+  try {
+    await navigator.clipboard.writeText(nota.dato)
+    showToast('Dato copiado al portapapeles', 'success')
+  } catch {
+    showToast('No se pudo copiar', 'error')
+  }
+}
+
 /** Elimina una nota normal (texto plano) */
 function eliminarNota(nota: NotaRegistro) {
   if (!confirm(`¿Eliminar "${nota.titulo}"?`)) return
@@ -1178,6 +1189,15 @@ async function saveSecretoEdit() {
                 <p v-if="nota.dato" class="pre">{{ nota.dato }}</p>
               </div>
               <div class="item-actions">
+                <button
+                  v-if="nota.dato"
+                  class="ghost reveal-btn"
+                  type="button"
+                  title="Copiar dato"
+                  @click="copiarNota(nota)"
+                >
+                  <IconClipboard :size="16" /> Copiar
+                </button>
                 <button class="edit-btn" title="Editar nota" @click="openNotaEdit(nota)">
                   <IconEdit :size="16" />
                 </button>
