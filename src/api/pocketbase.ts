@@ -1,4 +1,5 @@
 import { normalizeName, normalizeEmail, normalizeText, upperFirst } from '../utils/format'
+import { clearStoredUser, setStoredUser } from '../utils/session'
 
 const BASE_URL = 'https://pb.infocatsoluciones.com'
 
@@ -112,6 +113,8 @@ export function setToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY)
+  // Al cerrar sesión también se borra el usuario guardado
+  clearStoredUser()
 }
 
 export function isAuthenticated(): boolean {
@@ -296,6 +299,15 @@ export async function login(identity: string, password: string) {
   }
   const data = await res.json()
   setToken(data.token)
+
+  // Guarda el correo del usuario en localStorage.user para el control de acceso del módulo DNIs
+  const record = data?.record as Record<string, unknown> | undefined
+  if (record) {
+    setStoredUser({
+      user: String(record.email ?? record.user ?? identity ?? '').trim(),
+    })
+  }
+
   return data
 }
 

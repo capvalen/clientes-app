@@ -345,6 +345,24 @@ async function guardar() {
   flex-wrap: wrap;
 }
 
+/* En celular: título arriba y acciones en una fila aparte,
+   con "Nuevo" a la izquierda y "Ocultar/Ver montos" a la derecha */
+@media (max-width: 1023px) {
+  .head {
+    flex-wrap: wrap;
+  }
+
+  .head-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  .head-actions .primary {
+    order: -1;
+  }
+}
+
 /* Filtro por cliente */
 .filter-bar {
   display: flex;

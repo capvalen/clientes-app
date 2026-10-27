@@ -17,8 +17,8 @@ que permita:
 5. Copiar un DNI al portapapeles.
 6. Eliminar un DNI de la lista de desconocidos.
 
-El módulo solo debe ser visible y accesible para el usuario
-`cpariona` con perfil `administrador`.
+El módulo solo debe ser visible y accesible para el correo
+`CORREO@gmail.com`.
 
 ---
 
@@ -194,29 +194,40 @@ Notas:
 
 ## 4. Acceso restringido
 
-Leer el usuario desde `localStorage` con la clave `user`:
+Leer el usuario desde `localStorage` con la clave `user`. Solo se guarda el correo:
 
 ```json
-{ "user": "cpariona", "perfil": "administrador" }
+{ "user": "[Correo]" }
 ```
+
+El módulo solo se habilita para ese correo. No se usa `perfil`.
 
 Regla (comparar sin distinguir mayúsculas/minúsculas y recortando espacios):
 
 ```ts
+export const DNI_ADMIN_EMAIL = '[CORREO]'
+
 export function isDniAdmin(): boolean {
   const raw = localStorage.getItem('user')
   if (!raw) return false
   try {
     const user = JSON.parse(raw)
     return (
-      String(user.user ?? '').trim().toLowerCase() === 'cpariona' &&
-      String(user.perfil ?? '').trim().toLowerCase() === 'administrador'
+      String(user.user ?? '').trim().toLowerCase() === DNI_ADMIN_EMAIL
     )
   } catch {
     return false
   }
 }
 ```
+
+Al iniciar sesión, guardar el correo del `record` de PocketBase:
+
+```ts
+setStoredUser({ user: String(record.email ?? identity).trim() })
+```
+
+Al cerrar sesión (o si expira el token), eliminar `localStorage.user`.
 
 Debe aplicarse en dos lugares:
 
@@ -227,10 +238,7 @@ Debe aplicarse en dos lugares:
 Para probar, en la consola del navegador:
 
 ```js
-localStorage.setItem(
-  'user',
-  JSON.stringify({ user: 'cpariona', perfil: 'administrador' }),
-)
+localStorage.setItem('user', JSON.stringify({ user: '[COREO]' }))
 ```
 
 ---
@@ -415,7 +423,7 @@ curl -s -X DELETE "https://dnis.infocat.workers.dev/api/desconocidos/eliminar/12
 ## 9. Checklist final
 
 - [ ] `VITE_INFOCAT_DNI` definido en `.env` y tipado en `env.d.ts`.
-- [ ] Ítem “Proyecto DNIs” visible solo para `cpariona` / `administrador`.
+- [ ] Ítem “Proyecto DNIs” visible solo para el correo `[CORREO]`.
 - [ ] Ruta `/dnis` protegida por guard.
 - [ ] Formulario con 3 inputs sin placeholders.
 - [ ] Automático hace `GET /api/dni/{dni}/{token}`.

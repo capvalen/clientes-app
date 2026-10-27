@@ -25,7 +25,7 @@ const version = __APP_VERSION__
 
 const authed = ref(isAuthenticated())
 const menuOpen = ref(false)
-/** Módulo Proyecto DNIs: solo visible para cpariona / administrador */
+/** Módulo Proyecto DNIs: solo visible para el correo autorizado */
 const dniAdmin = ref(isDniAdmin())
 
 watch(

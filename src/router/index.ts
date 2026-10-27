@@ -60,7 +60,7 @@ const router = createRouter({
     {
       path: '/dnis',
       name: 'dnis',
-      // Módulo privado: solo para el usuario cpariona con perfil administrador
+      // Módulo privado: solo para el correo autorizado
       meta: { requiresDniAdmin: true },
       component: () => import('../views/DniView.vue'),
     },
