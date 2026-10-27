@@ -1,6 +1,10 @@
 /**
  * Tema de color primario de la aplicación.
  * El estado es un singleton y se persiste en localStorage.
+ *
+ * Nota: el <meta name="theme-color"> (barra superior) sigue el tema elegido,
+ * mientras que manifest.webmanifest usa theme_color blanco a propósito para
+ * que la barra inferior del sistema en Android sea siempre blanca.
  */
 import { ref, watch } from 'vue'
 
