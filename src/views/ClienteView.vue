@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { IconPlus, IconLoader, IconFolder, IconUsers, IconSearch, IconEraser, IconTool, IconArrowsSort, IconSortAscendingLetters } from '@tabler/icons-vue'
 import {
   listClientes,
@@ -13,6 +13,8 @@ import {
   type Servicio,
 } from '../api/pocketbase'
 import Modal from '../components/Modal.vue'
+
+const router = useRouter()
 
 const clientes = ref<Cliente[]>([])
 const proyectos = ref<Proyecto[]>([])
@@ -119,10 +121,11 @@ async function crear() {
   creating.value = true
   error.value = ''
   try {
-    await createCliente(form.value)
+    const cliente = await createCliente(form.value)
     form.value = { nombre: '', celular: '', ruc: '', direccion: '', email: '' }
     showForm.value = false
-    await load()
+    // Redirigir al perfil del cliente recién creado
+    router.push(`/cliente/${cliente.id}`)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al crear cliente'
   } finally {
