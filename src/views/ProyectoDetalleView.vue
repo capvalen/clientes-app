@@ -286,6 +286,12 @@ const comprobanteFiles = computed(() =>
   selectedPago.value ? getComprobanteFiles(selectedPago.value) : [],
 )
 
+/** Monto mostrado en la constancia: para deudas es el restante (monto - adelanto) */
+function ticketMonto(p: Pago): number {
+  if (p.que_es !== 'deuda') return Number(p.monto) || 0
+  return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
+}
+
 // Filtro: mostrar solo deudas pendientes
 type FiltroPagos = 'todos' | 'deudas'
 const filtroPagos = ref<FiltroPagos>('deudas')
@@ -967,7 +973,6 @@ onMounted(load)
         <!-- Constancia de pago (ticket) -->
         <Modal
           v-if="selectedPago"
-          title="Constancia de pago"
           size="sm"
           @close="selectedPago = null"
         >
@@ -1000,7 +1005,7 @@ onMounted(load)
                 {{ selectedPago.que_es === 'deuda' ? 'Adeuda' : 'Pagado' }}
               </div>
               <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
-                <span class="ticket-moneda">S/</span> {{ Number(selectedPago.monto || 0).toFixed(2) }}
+                <span class="ticket-moneda">S/</span> {{ ticketMonto(selectedPago).toFixed(2) }}
               </div>
 
               <div class="ticket-sep"></div>
@@ -1800,6 +1805,12 @@ button.danger:hover {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .ticket-capture {
+    margin: 0;
   }
 }
 </style>

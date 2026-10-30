@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { IconX } from '@tabler/icons-vue'
 
-defineProps<{ title: string; size?: 'sm' | 'md' }>()
+defineProps<{ title?: string; size?: 'sm' | 'md' }>()
 const emit = defineEmits<{ close: [] }>()
 
 // Animación de salida antes de avisar al padre para desmontar el modal
@@ -36,7 +36,7 @@ onUnmounted(() => {
     <div class="overlay" :class="{ closing }" @click.self="requestClose">
       <div class="modal" :class="size === 'sm' ? 'modal-sm' : ''" role="dialog" aria-modal="true">
         <header class="modal-head">
-          <h2>{{ title }}</h2>
+          <h2 v-if="title">{{ title }}</h2>
           <button class="close" type="button" @click="requestClose" aria-label="Cerrar">
             <IconX :size="18" />
           </button>
@@ -157,6 +157,7 @@ onUnmounted(() => {
   padding: 0.25rem;
   border-radius: 0.25rem;
   display: inline-flex;
+  margin-left: auto;
 }
 
 .close:hover {

@@ -479,6 +479,12 @@ function openPagoDetalle(pago: Pago) {
   selectedPago.value = pago
 }
 
+/** Monto mostrado en la constancia: para deudas es el restante (monto - adelanto) */
+function ticketMonto(p: Pago): number {
+  if (p.que_es !== 'deuda') return Number(p.monto) || 0
+  return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
+}
+
 async function capturarTicket() {
   const el = ticketRef.value
   if (!el || !selectedPago.value) return
@@ -932,7 +938,6 @@ onMounted(load)
         <!-- Constancia de pago (ticket) -->
         <Modal
           v-if="selectedPago"
-          title="Constancia de pago"
           size="sm"
           @close="selectedPago = null"
         >
@@ -965,7 +970,7 @@ onMounted(load)
                 {{ selectedPago.que_es === 'deuda' ? 'Adeuda' : 'Pagado' }}
               </div>
               <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
-                <span class="ticket-moneda">S/</span> {{ Number(selectedPago.monto || 0).toFixed(2) }}
+                <span class="ticket-moneda">S/</span> {{ ticketMonto(selectedPago).toFixed(2) }}
               </div>
 
               <div class="ticket-sep"></div>
@@ -1772,5 +1777,11 @@ button.danger:hover {
 
 .cronograma-total strong:last-child {
   color: var(--color-primary-dark);
+}
+
+@media (max-width: 640px) {
+  .ticket-capture {
+    margin: 0;
+  }
 }
 </style>

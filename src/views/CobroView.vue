@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import html2canvas from 'html2canvas'
 import {
   IconAlertTriangle,
   IconBuilding,
   IconBuildingBank,
   IconCalendar,
+  IconCamera,
   IconCash,
   IconCheck,
   IconCircle,
@@ -18,6 +20,7 @@ import {
   IconFolder,
   IconLoader,
   IconNotes,
+  IconPaperclip,
   IconPhone,
   IconSearch,
   IconTools,
@@ -30,13 +33,15 @@ import {
   listProyectos,
   listServicios,
   updatePago,
+  getComprobanteFiles,
+  getToken,
   type Pago,
   type Cliente,
   type Proyecto,
   type Servicio,
   type EntidadTipo,
 } from '../api/pocketbase'
-import { formatFechaCorta } from '../utils/format'
+import { formatDateTime, formatFechaCorta } from '../utils/format'
 import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
@@ -163,11 +168,27 @@ const cobrosVisibles = computed(
   () => cobrosVencidos.value.length + cobrosEsteMes.value.length + cobrosProximoMes.value.length,
 )
 
-/** Suma de los montos pendientes (deudas) de una lista */
+/** ¿El cobro tiene un adelanto parcial sobre una deuda? */
+function tieneAdelanto(p: Pago): boolean {
+  return p.que_es === 'deuda' && (Number(p.adelanto) || 0) > 0
+}
+
+/** Saldo pendiente de un cobro (monto - adelanto) */
+function pendienteDe(p: Pago): number {
+  return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
+}
+
+/** Monto mostrado en la constancia: para deudas es el restante (monto - adelanto) */
+function ticketMonto(p: Pago): number {
+  if (p.que_es !== 'deuda') return Number(p.monto) || 0
+  return pendienteDe(p)
+}
+
+/** Suma de los montos pendientes (deudas) de una lista, descontando adelantos */
 function totalPendiente(lista: Pago[]): number {
   return lista
     .filter((p) => p.estado === 'pendiente')
-    .reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
+    .reduce((acc, p) => acc + pendienteDe(p), 0)
 }
 
 // ---- Búsqueda por texto ----
@@ -273,6 +294,94 @@ async function registrarPago() {
     error.value = e instanceof Error ? e.message : 'Error al registrar el pago'
   } finally {
     saving.value = false
+  }
+}
+
+// ---- Detalle / constancia de pago (ticket) ----
+const selectedPago = ref<Pago | null>(null)
+const ticketRef = ref<HTMLElement | null>(null)
+const capturando = ref(false)
+
+/** Comprobantes adjuntos del pago seleccionado (nombre + URL) */
+const comprobanteFiles = computed(() =>
+  selectedPago.value ? getComprobanteFiles(selectedPago.value) : [],
+)
+
+function openDetalle(pago: Pago) {
+  selectedPago.value = pago
+}
+
+function closeDetalle() {
+  selectedPago.value = null
+}
+
+/** Indica si el comprobante es una imagen (por extensión) */
+function esImagen(nombre: string | undefined): boolean {
+  if (!nombre) return false
+  return /\.(jpe?g|png|gif|webp|bmp)$/i.test(nombre)
+}
+
+async function capturarTicket() {
+  const el = ticketRef.value
+  if (!el || !selectedPago.value) return
+  capturando.value = true
+  try {
+    // Convertir las miniaturas a dataURL para evitar el bloqueo cross-origin del canvas
+    const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img.thumb'))
+    const originals: { img: HTMLImageElement; src: string }[] = []
+    const headers: Record<string, string> = {}
+    const token = getToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    for (const img of imgs) {
+      if (!img.src) continue
+      originals.push({ img, src: img.src })
+      try {
+        const res = await fetch(img.src, { headers })
+        const blob = await res.blob()
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => reject(new Error('No se pudo leer la imagen'))
+          reader.readAsDataURL(blob)
+        })
+        img.src = dataUrl
+      } catch {
+        // si falla, se captura sin la imagen
+      }
+    }
+    if (originals.length) await new Promise((r) => setTimeout(r, 100))
+
+    const canvas = await html2canvas(el, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+    })
+
+    // Crear canvas con padding: +30px en X, +20px en Y, contenido desplazado 15px derecha y 10px abajo
+    const offsetX = 15 * 2 // scale factor
+    const offsetY = 10 * 2
+    const newWidth = canvas.width + 30 * 2
+    const newHeight = canvas.height + 20 * 2
+    const resultCanvas = document.createElement('canvas')
+    resultCanvas.width = newWidth
+    resultCanvas.height = newHeight
+    const ctx = resultCanvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, newWidth, newHeight)
+    ctx.drawImage(canvas, offsetX, offsetY)
+
+    originals.forEach(({ img, src }) => {
+      img.src = src
+    })
+
+    const link = document.createElement('a')
+    link.download = `pago-${selectedPago.value.id}.png`
+    link.href = resultCanvas.toDataURL('image/png')
+    link.click()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al capturar el ticket'
+  } finally {
+    capturando.value = false
   }
 }
 
@@ -402,14 +511,19 @@ onMounted(load)
                   <IconCalendar :size="13" />
                   {{ formatFechaCorta(p.fecha) }}
                 </span>
-                <span v-if="p.que_es === 'deuda' && Number(p.adelanto) > 0" class="adelanto">
-                  Adelanto: {{ monto(p.adelanto) }}
-                </span>
+                <span v-if="tieneAdelanto(p)" class="adelanto">{{ monto(p.adelanto) }}</span>
               </div>
             </div>
 
             <div class="cobro-right">
-              <strong class="monto">{{ monto(p.monto) }}</strong>
+              <span class="montos">
+                <strong class="monto" :class="{ tachado: tieneAdelanto(p) }">
+                  {{ monto(p.monto) }}
+                </strong>
+                <strong v-if="tieneAdelanto(p)" class="monto saldo">
+                  {{ monto(pendienteDe(p)) }}
+                </strong>
+              </span>
               <span
                 class="badge"
                 :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
@@ -425,6 +539,10 @@ onMounted(load)
                 @click="openRealizarPago(p)"
               >
                 <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
+                <span class="btn-monto">{{ monto(pendienteDe(p)) }}</span>
+              </button>
+              <button class="detalle-btn" type="button" @click="openDetalle(p)">
+                <IconEye :size="16" /> Ver detalle
               </button>
             </div>
           </li>
@@ -464,14 +582,19 @@ onMounted(load)
                   <IconCalendar :size="13" />
                   {{ formatFechaCorta(p.fecha) }}
                 </span>
-                <span v-if="p.que_es === 'deuda' && Number(p.adelanto) > 0" class="adelanto">
-                  Adelanto: {{ monto(p.adelanto) }}
-                </span>
+                <span v-if="tieneAdelanto(p)" class="adelanto">{{ monto(p.adelanto) }}</span>
               </div>
             </div>
 
             <div class="cobro-right">
-              <strong class="monto">{{ monto(p.monto) }}</strong>
+              <span class="montos">
+                <strong class="monto" :class="{ tachado: tieneAdelanto(p) }">
+                  {{ monto(p.monto) }}
+                </strong>
+                <strong v-if="tieneAdelanto(p)" class="monto saldo">
+                  {{ monto(pendienteDe(p)) }}
+                </strong>
+              </span>
               <span
                 class="badge"
                 :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
@@ -487,6 +610,10 @@ onMounted(load)
                 @click="openRealizarPago(p)"
               >
                 <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
+                <span class="btn-monto">{{ monto(pendienteDe(p)) }}</span>
+              </button>
+              <button class="detalle-btn" type="button" @click="openDetalle(p)">
+                <IconEye :size="16" /> Ver detalle
               </button>
             </div>
           </li>
@@ -526,14 +653,19 @@ onMounted(load)
                   <IconCalendar :size="13" />
                   {{ formatFechaCorta(p.fecha) }}
                 </span>
-                <span v-if="p.que_es === 'deuda' && Number(p.adelanto) > 0" class="adelanto">
-                  Adelanto: {{ monto(p.adelanto) }}
-                </span>
+                <span v-if="tieneAdelanto(p)" class="adelanto">{{ monto(p.adelanto) }}</span>
               </div>
             </div>
 
             <div class="cobro-right">
-              <strong class="monto">{{ monto(p.monto) }}</strong>
+              <span class="montos">
+                <strong class="monto" :class="{ tachado: tieneAdelanto(p) }">
+                  {{ monto(p.monto) }}
+                </strong>
+                <strong v-if="tieneAdelanto(p)" class="monto saldo">
+                  {{ monto(pendienteDe(p)) }}
+                </strong>
+              </span>
               <span
                 class="badge"
                 :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
@@ -549,6 +681,10 @@ onMounted(load)
                 @click="openRealizarPago(p)"
               >
                 <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
+                <span class="btn-monto">{{ monto(pendienteDe(p)) }}</span>
+              </button>
+              <button class="detalle-btn" type="button" @click="openDetalle(p)">
+                <IconEye :size="16" /> Ver detalle
               </button>
             </div>
           </li>
@@ -604,6 +740,105 @@ onMounted(load)
           <button type="button" class="ghost" @click="closeRealizarPago">Cancelar</button>
         </div>
       </form>
+    </Modal>
+
+    <!-- Detalle / constancia de pago (ticket) -->
+    <Modal v-if="selectedPago" size="sm" @close="closeDetalle">
+      <div ref="ticketRef" class="ticket-capture">
+        <div class="ticket">
+          <div class="ticket-head">
+            <img src="/infocat_transparente.png" alt="Infocat" class="ticket-logo" />
+            <strong>{{
+              selectedPago.que_es === 'deuda' ? 'Registro de Deuda' : 'Constancia de pago'
+            }}</strong>
+          </div>
+
+          <div class="ticket-sep"></div>
+
+          <div class="ticket-row">
+            <span>
+              <IconTools v-if="entidadDe(selectedPago)?.tipo === 'servicio'" :size="14" />
+              <IconFolder v-else :size="14" />
+              {{ entidadDe(selectedPago)?.tipo === 'servicio' ? 'Servicio' : 'Proyecto' }}
+            </span>
+            <strong>{{ entidadDe(selectedPago)?.nombre || '—' }}</strong>
+          </div>
+          <div class="ticket-row">
+            <span><IconUser :size="14" /> Cliente</span>
+            <strong>{{ clienteNombreEntidad(selectedPago) }}</strong>
+          </div>
+          <div v-if="selectedPago.observaciones" class="ticket-row">
+            <span><IconNotes :size="14" /> Detalle</span>
+            <strong class="pre">{{ selectedPago.observaciones }}</strong>
+          </div>
+
+          <div class="ticket-sep"></div>
+
+          <div class="ticket-estado-label" :class="{ deuda: selectedPago.que_es === 'deuda' }">
+            <IconCheck v-if="selectedPago.que_es !== 'deuda'" :size="14" />
+            {{ selectedPago.que_es === 'deuda' ? 'Adeuda' : 'Pagado' }}
+          </div>
+          <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
+            <span class="ticket-moneda">S/</span> {{ ticketMonto(selectedPago).toFixed(2) }}
+          </div>
+
+          <div class="ticket-sep"></div>
+
+          <div class="ticket-row">
+            <span><IconCalendar :size="14" /> Fecha</span>
+            <strong>{{ formatDateTime(selectedPago.fecha) }}</strong>
+          </div>
+          <div class="ticket-row">
+            <span><IconWallet :size="14" /> Método de pago</span>
+            <span
+              class="metodo-badge"
+              :style="{
+                color: metodoInfo(selectedPago.metodo_pago).color,
+                background: metodoInfo(selectedPago.metodo_pago).bg,
+              }"
+            >
+              <component :is="metodoInfo(selectedPago.metodo_pago).icon" :size="14" />
+              {{ selectedPago.metodo_pago }}
+            </span>
+          </div>
+          <div class="ticket-row">
+            <span><IconCheck :size="14" /> Estado</span>
+            <span
+              class="badge"
+              :style="{
+                color: pagoInfo(selectedPago.estado).color,
+                background: pagoInfo(selectedPago.estado).bg,
+              }"
+            >
+              <IconCheck v-if="selectedPago.estado === 'pagado'" :size="12" />
+              {{ pagoInfo(selectedPago.estado).label }}
+            </span>
+          </div>
+
+          <template v-if="comprobanteFiles.length">
+            <div class="ticket-sep"></div>
+            <div class="ticket-adjunto">
+              <span><IconPaperclip :size="14" /> Adjuntos</span>
+              <template v-for="file in comprobanteFiles" :key="file.name">
+                <a v-if="esImagen(file.name)" :href="file.url" target="_blank" rel="noopener">
+                  <img :src="file.url" alt="Comprobante" class="thumb" />
+                </a>
+                <a v-else :href="file.url" target="_blank" rel="noopener">
+                  <IconPaperclip :size="16" /> {{ file.name }}
+                </a>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div class="ticket-actions">
+        <button class="primary" :disabled="capturando" @click="capturarTicket">
+          <IconLoader v-if="capturando" :size="18" class="spin" />
+          <IconCamera v-else :size="18" />
+          {{ capturando ? 'Capturando…' : 'Capturar ticket' }}
+        </button>
+      </div>
     </Modal>
   </main>
 </template>
@@ -817,6 +1052,20 @@ onMounted(load)
   white-space: nowrap;
 }
 
+.cobro-right .montos {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+
+.cobro-right .monto.tachado {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-2);
+  text-decoration: line-through;
+}
+
 .entidad-link {
   color: var(--color-text);
   text-decoration: none;
@@ -888,6 +1137,10 @@ onMounted(load)
   color: #0969da;
 }
 
+.adelanto::before {
+  content: 'Adelanto: ';
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -917,6 +1170,187 @@ onMounted(load)
 
 .realizar-pago:hover {
   background: hsl(var(--primary) / 0.12);
+}
+
+.btn-monto {
+  display: none;
+}
+
+/* Botón de detalle (solo visible en celular) */
+.detalle-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+
+.detalle-btn:hover {
+  background: var(--color-background-soft);
+}
+
+/* Ticket / constancia de pago */
+.metodo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ticket-capture {
+  border: 2px dashed var(--color-border);
+  border-radius: 0.75rem;
+  margin: 1.25rem;
+  background: #ffffff;
+}
+
+.ticket {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  padding: 20px;
+}
+
+.ticket-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  text-align: center;
+}
+
+.ticket-logo {
+  height: 70px;
+  width: auto;
+  margin-bottom: 0.25rem;
+}
+
+.ticket-head strong {
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.ticket-head span {
+  font-size: 0.8rem;
+  color: var(--color-text-2);
+}
+
+.ticket-sep {
+  border-top: 1px dashed var(--color-border);
+  margin: 0.9rem 0;
+}
+
+.ticket-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+}
+
+.ticket-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--color-text-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.ticket-row strong {
+  font-weight: 500;
+}
+
+.ticket-row .pre {
+  white-space: pre-wrap;
+  text-align: right;
+  margin: 0;
+  font-weight: 400;
+}
+
+.ticket-monto {
+  text-align: center;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--color-primary-dark);
+}
+
+.ticket-moneda {
+  font-size: 0.7em;
+  font-weight: 700;
+}
+
+.ticket-estado-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6e7781;
+}
+
+.ticket-estado-label.deuda {
+  color: #ffab00;
+}
+
+.ticket-monto.deuda {
+  color: #ffab00;
+}
+
+.ticket-adjunto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ticket-adjunto > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--color-text-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.ticket-adjunto a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  color: var(--color-primary-dark);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.ticket-adjunto .thumb {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 0.35rem;
+  border: 1px solid var(--color-border);
+  object-fit: contain;
+}
+
+.ticket-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
 }
 
 /* Formulario / modal */
@@ -1093,7 +1527,7 @@ button.ghost {
   .cobro-sub > .cliente,
   .cobro-sub > .pago-fecha,
   .cobro-sub > .adelanto,
-  .cobro-right > .monto {
+  .cobro-right > .montos {
     display: flex;
     align-items: center;
     gap: 0.3rem;
@@ -1107,7 +1541,7 @@ button.ghost {
   .cobro-obs::before,
   .cliente::before,
   .pago-fecha::before,
-  .monto::before,
+  .montos::before,
   .adelanto::before {
     margin-right: auto;
     flex-shrink: 0;
@@ -1122,7 +1556,7 @@ button.ghost {
   .pago-fecha::before {
     content: 'Fecha';
   }
-  .monto::before {
+  .montos::before {
     content: 'Monto';
   }
   .adelanto::before {
@@ -1138,8 +1572,25 @@ button.ghost {
   .pago-fecha {
     order: 4;
   }
-  .monto {
+  .montos {
     order: 5;
+  }
+
+  /* Monto: etiqueta a la izquierda, total a la derecha (sin tachado) */
+  .cobro-right > .montos {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cobro-right > .montos .monto {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #6e7781;
+    text-decoration: none;
+  }
+
+  .cobro-right > .montos .monto.saldo {
+    display: none;
   }
   .adelanto {
     order: 6;
@@ -1155,6 +1606,21 @@ button.ghost {
   .cobro-right > .realizar-pago {
     order: 8;
     width: 100%;
+  }
+
+  .btn-monto {
+    display: inline;
+    margin-left: 0.3rem;
+  }
+
+  .cobro-right > .detalle-btn {
+    order: 9;
+    display: inline-flex;
+    width: 100%;
+  }
+
+  .ticket-capture {
+    margin: 0;
   }
 }
 </style>
