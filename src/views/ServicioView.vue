@@ -9,6 +9,8 @@ import {
   IconEye,
   IconEyeOff,
   IconCalendar,
+  IconSearch,
+  IconEraser,
 } from '@tabler/icons-vue'
 import {
   listServicios,
@@ -65,6 +67,50 @@ const clienteNombre = computed(() => {
   const map = new Map(clientes.value.map((c) => [c.id, c.nombre]))
   return (id: string) => map.get(id) || '—'
 })
+
+// ---- Búsqueda por texto ----
+const busqueda = ref('')
+
+/** Normaliza texto para comparar (minúsculas, sin tildes) */
+function normalizar(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+/** Términos de búsqueda (separados por espacios) */
+const terminos = computed(() => normalizar(busqueda.value).split(/\s+/).filter(Boolean))
+
+function limpiarBusqueda() {
+  busqueda.value = ''
+}
+
+// ---- Filtro por cliente ----
+const filtroCliente = ref('')
+
+/** Clientes ordenados alfabéticamente para el selector */
+const clientesOrdenados = computed(() =>
+  [...clientes.value].sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
+  ),
+)
+
+/** Servicios que coinciden con el cliente seleccionado y con todos los términos */
+const serviciosFiltrados = computed(() => {
+  const clienteId = filtroCliente.value
+  const t = terminos.value
+  return servicios.value.filter((s) => {
+    if (clienteId && s.cliente_id !== clienteId) return false
+    if (t.length === 0) return true
+    const texto = normalizar(`${s.servicio ?? ''} ${s.descripcion ?? ''}`)
+    return t.every((term) => texto.includes(term))
+  })
+})
+
+const hayBusqueda = computed(() => terminos.value.length > 0)
+const hayFiltro = computed(() => hayBusqueda.value || filtroCliente.value !== '')
 
 async function load() {
   loading.value = true
@@ -155,7 +201,7 @@ async function guardar() {
 <template>
   <main>
     <div class="head">
-      <h1>Servicios</h1>
+      <h1><IconTools :size="26" /> Servicios</h1>
       <div class="head-actions">
         <button
           class="ghost"
@@ -170,6 +216,40 @@ async function guardar() {
           <IconPlus :size="18" /> Nuevo servicio
         </button>
       </div>
+    </div>
+
+    <!-- Buscador -->
+    <div class="search-bar">
+      <input
+        v-model="busqueda"
+        type="text"
+        placeholder="Buscar por servicio o descripción…"
+        aria-label="Buscar servicios"
+      />
+      <button class="search-btn" type="button" title="Buscar" @click="busqueda = busqueda.trim()">
+        <IconSearch :size="18" />
+      </button>
+      <button class="clear-btn" type="button" title="Limpiar" @click="limpiarBusqueda">
+        <IconEraser :size="18" />
+      </button>
+    </div>
+
+    <!-- Filtro por cliente -->
+    <div class="filter-bar">
+      <label class="filter-field">
+        <IconUser :size="16" />
+        Cliente
+        <select v-model="filtroCliente" aria-label="Filtrar servicios por cliente">
+          <option value="">Todos los clientes</option>
+          <option v-for="c in clientesOrdenados" :key="c.id" :value="c.id">
+            {{ c.nombre }}
+          </option>
+        </select>
+      </label>
+      <span class="filter-count">
+        {{ serviciosFiltrados.length }}
+        {{ serviciosFiltrados.length === 1 ? 'servicio' : 'servicios' }}
+      </span>
     </div>
 
     <Modal v-if="showForm" title="Nuevo servicio" @close="showForm = false">
@@ -263,13 +343,22 @@ async function guardar() {
 
     <p v-if="loading" class="muted"><IconLoader :size="16" class="spin" /> Cargando…</p>
 
-    <p v-else-if="servicios.length === 0" class="muted">
+    <p v-else-if="hayFiltro && serviciosFiltrados.length === 0 && hayBusqueda" class="muted">
+      <IconSearch :size="16" /> Sin resultados para “{{ busqueda }}”.
+    </p>
+
+    <div v-else-if="hayFiltro && serviciosFiltrados.length === 0" class="empty-state">
+      <IconTools :size="32" />
+      <span>Este cliente no tiene servicios.</span>
+    </div>
+
+    <p v-else-if="serviciosFiltrados.length === 0" class="muted">
       <IconTools :size="16" /> No hay servicios registrados.
     </p>
 
     <div v-else class="cards">
       <RouterLink
-        v-for="s in servicios"
+        v-for="s in serviciosFiltrados"
         :key="s.id"
         :to="`/servicio/${s.id}`"
         class="card"
@@ -304,6 +393,14 @@ async function guardar() {
   gap: 1rem;
 }
 
+.head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.5rem;
+}
+
 .head-actions {
   display: flex;
   gap: 0.5rem;
@@ -326,6 +423,99 @@ async function guardar() {
   .head-actions .primary {
     order: -1;
   }
+}
+
+/* Buscador */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: hsl(var(--primary) / 0.6);
+}
+
+.search-btn,
+.clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.search-btn:hover {
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
+}
+
+.clear-btn:hover {
+  background: rgba(229, 72, 77, 0.1);
+  color: #e5484d;
+}
+
+/* Filtro por cliente */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-2);
+}
+
+.filter-field select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--color-text-2);
+}
+
+/* Estado vacío al filtrar por cliente */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-2);
 }
 
 .form {

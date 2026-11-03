@@ -26,7 +26,6 @@ import {
 } from '../api/dnis'
 import { showToast } from '../utils/toast'
 import { formatFechaHora } from '../utils/format'
-import Breadcrumbs from '../components/Breadcrumbs.vue'
 
 const form = ref({ dni: '', apellido: '', nombre: '' })
 const dniInput = ref<HTMLInputElement | null>(null)
@@ -249,8 +248,6 @@ onMounted(() => {
 
 <template>
   <main>
-    <Breadcrumbs :items="[{ label: 'Proyecto DNIs' }]" />
-
     <div class="head">
       <h1><IconId :size="26" /> Proyecto DNIs</h1>
     </div>

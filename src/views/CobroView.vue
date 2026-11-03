@@ -43,7 +43,6 @@ import {
 } from '../api/pocketbase'
 import { formatDateTime, formatFechaCorta } from '../utils/format'
 import { showMontos, monto, toggleMontos } from '../utils/montos'
-import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
 import MetodoPagoPicker from '../components/MetodoPagoPicker.vue'
 
@@ -411,8 +410,6 @@ onMounted(load)
 
 <template>
   <main>
-    <Breadcrumbs :items="[{ label: 'Cobros' }]" />
-
     <div class="head">
       <h1><IconWallet :size="26" /> Cobros</h1>
       <button
@@ -477,7 +474,7 @@ onMounted(load)
       <p v-if="error" class="error">{{ error }}</p>
 
       <!-- Cobros vencidos (meses anteriores sin pagar) -->
-      <section v-if="cobrosVencidos.length > 0" class="card card-alerta">
+      <section v-if="cobrosVencidos.length > 0" class="card">
         <div class="tab-head">
           <h2 class="alerta-titulo">
             <IconAlertTriangle :size="20" /> Cobros vencidos
@@ -488,7 +485,7 @@ onMounted(load)
         </div>
 
         <ul class="list">
-          <li v-for="p in cobrosVencidos" :key="p.id" class="cobro">
+          <li v-for="p in cobrosVencidos" :key="p.id" class="cobro vencido">
             <div class="cobro-left">
               <div class="cobro-head">
                 <span class="tipo-badge" :class="`tipo-${entidadDe(p)?.tipo ?? 'proyecto'}`">
@@ -782,6 +779,17 @@ onMounted(load)
             <span class="ticket-moneda">S/</span> {{ ticketMonto(selectedPago).toFixed(2) }}
           </div>
 
+          <div v-if="tieneAdelanto(selectedPago)" class="ticket-desglose">
+            <div class="ticket-row">
+              <span><IconCoin :size="14" /> Monto total</span>
+              <strong>{{ monto(selectedPago.monto) }}</strong>
+            </div>
+            <div class="ticket-row">
+              <span><IconCash :size="14" /> Adelanto</span>
+              <strong class="adelanto-valor">{{ monto(selectedPago.adelanto) }}</strong>
+            </div>
+          </div>
+
           <div class="ticket-sep"></div>
 
           <div class="ticket-row">
@@ -957,11 +965,10 @@ onMounted(load)
   margin-top: 1rem;
 }
 
-.card-alerta {
-  border: 1px solid rgba(229, 72, 77, 0.5);
-  border-radius: 0.5rem;
-  padding: 1.25rem;
-  background: rgba(229, 72, 77, 0.06);
+/* Cobro vencido: borde rojo individual (ya no hay card global) */
+.cobro.vencido {
+  border-color: rgba(229, 72, 77, 0.3);
+  background: rgba(229, 72, 77, 0.03);
 }
 
 .alerta-titulo {
@@ -1310,6 +1317,28 @@ onMounted(load)
 }
 
 .ticket-monto.deuda {
+  color: #ffab00;
+}
+
+.ticket-desglose {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.02));
+}
+
+.ticket-desglose .ticket-row > span:first-child {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ticket-desglose .ticket-row strong {
+  font-weight: 700;
+}
+
+.ticket-desglose .adelanto-valor {
   color: #ffab00;
 }
 

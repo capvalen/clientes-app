@@ -1,6 +1,6 @@
 {
   "name": "clientes-db",
-  "version": "1.0.16c",
+  "version": "1.0.17",
   "private": true,
   "type": "module",
   "scripts": {

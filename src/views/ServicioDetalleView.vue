@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import html2canvas from 'html2canvas'
 import {
@@ -9,6 +9,7 @@ import {
   IconCamera,
   IconCash,
   IconCheck,
+  IconChevronDown,
   IconClock,
   IconCoin,
   IconDeviceIpadHorizontalUp,
@@ -170,6 +171,56 @@ function metodoInfo(metodo: string) {
 function pagoInfo(estado: string) {
   return ESTADO_PAGO[estado] ?? { label: estado, color: '#6e7781', bg: '#eaeef2' }
 }
+
+// ---- Estado del servicio (selector desplegable) ----
+const ESTADO_SERVICIO: Record<string, { label: string; color: string; bg: string }> = {
+  activo: { label: 'Activo', color: '#1a7f37', bg: '#dafbe1' },
+  inactivo: { label: 'Inactivo', color: '#6e7781', bg: '#eaeef2' },
+  suspendido: { label: 'Suspendido', color: '#9a6700', bg: '#fff8c5' },
+}
+
+function servicioEstadoInfo(estado: string) {
+  return (
+    ESTADO_SERVICIO[estado] ?? {
+      label: capitalize(estado),
+      color: '#6e7781',
+      bg: '#eaeef2',
+    }
+  )
+}
+
+const estadoRef = ref<HTMLElement | null>(null)
+const estadoMenuOpen = ref(false)
+const cambiandoEstado = ref(false)
+
+function toggleEstadoMenu() {
+  if (cambiandoEstado.value) return
+  estadoMenuOpen.value = !estadoMenuOpen.value
+}
+
+async function cambiarEstado(estado: Servicio['estado']) {
+  estadoMenuOpen.value = false
+  if (!servicio.value || servicio.value.estado === estado) return
+  cambiandoEstado.value = true
+  error.value = ''
+  try {
+    servicio.value = await updateServicio(servicio.value.id, { estado })
+    editForm.value.estado = estado
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al cambiar el estado'
+  } finally {
+    cambiandoEstado.value = false
+  }
+}
+
+function onDocClick(e: MouseEvent) {
+  if (estadoMenuOpen.value && estadoRef.value && !estadoRef.value.contains(e.target as Node)) {
+    estadoMenuOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', onDocClick))
+onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 function esImagen(nombre: string | undefined): boolean {
   if (!nombre) return false
@@ -485,6 +536,11 @@ function ticketMonto(p: Pago): number {
   return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
 }
 
+/** ¿La deuda tiene un adelanto parcial? */
+function tieneAdelanto(p: Pago): boolean {
+  return p.que_es === 'deuda' && (Number(p.adelanto) || 0) > 0
+}
+
 async function capturarTicket() {
   const el = ticketRef.value
   if (!el || !selectedPago.value) return
@@ -650,7 +706,51 @@ onMounted(load)
         <dl class="fields">
           <div><dt>Total</dt><dd class="total">{{ monto(servicio.total) }}</dd></div>
           <div><dt>Periocidad</dt><dd>{{ PERIOCIDAD_LABEL[servicio.periocidad] }}</dd></div>
-          <div><dt>Estado</dt><dd>{{ capitalize(servicio.estado) }}</dd></div>
+          <div>
+            <dt>Estado</dt>
+            <dd class="estado-dd">
+              <div ref="estadoRef" class="estado-wrap">
+                <button
+                  type="button"
+                  class="estado-btn"
+                  :style="{
+                    color: servicioEstadoInfo(servicio.estado).color,
+                    background: servicioEstadoInfo(servicio.estado).bg,
+                  }"
+                  :disabled="cambiandoEstado"
+                  title="Cambiar estado"
+                  aria-haspopup="listbox"
+                  :aria-expanded="estadoMenuOpen"
+                  @click="toggleEstadoMenu"
+                >
+                  <IconLoader v-if="cambiandoEstado" :size="13" class="spin" />
+                  {{ servicioEstadoInfo(servicio.estado).label }}
+                  <IconChevronDown
+                    :size="14"
+                    class="caret"
+                    :class="{ open: estadoMenuOpen }"
+                  />
+                </button>
+
+                <ul v-if="estadoMenuOpen" class="estado-menu" role="listbox">
+                  <li v-for="(info, key) in ESTADO_SERVICIO" :key="key">
+                    <button
+                      type="button"
+                      class="estado-item"
+                      :class="{ active: servicio.estado === key }"
+                      role="option"
+                      :aria-selected="servicio.estado === key"
+                      @click="cambiarEstado(key as Servicio['estado'])"
+                    >
+                      <span class="dot" :style="{ background: info.color }"></span>
+                      {{ info.label }}
+                      <IconCheck v-if="servicio.estado === key" :size="14" class="check" />
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </dd>
+          </div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(servicio.fecha_inicio) }}</dd></div>
           <div><dt>Fecha final</dt><dd>{{ formatDate(servicio.fecha_final) }}</dd></div>
         </dl>
@@ -971,6 +1071,17 @@ onMounted(load)
               </div>
               <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
                 <span class="ticket-moneda">S/</span> {{ ticketMonto(selectedPago).toFixed(2) }}
+              </div>
+
+              <div v-if="tieneAdelanto(selectedPago)" class="ticket-desglose">
+                <div class="ticket-row">
+                  <span><IconCoin :size="14" /> Monto total</span>
+                  <strong>{{ monto(selectedPago.monto) }}</strong>
+                </div>
+                <div class="ticket-row">
+                  <span><IconCash :size="14" /> Adelanto</span>
+                  <strong class="adelanto-valor">{{ monto(selectedPago.adelanto) }}</strong>
+                </div>
               </div>
 
               <div class="ticket-sep"></div>
@@ -1318,6 +1429,102 @@ button.danger:hover {
   grid-column: 1 / -1;
 }
 
+/* Selector de estado (desplegable) */
+.estado-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.estado-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.estado-btn:hover {
+  filter: brightness(0.96);
+}
+
+.estado-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.estado-btn .caret {
+  transition: transform 0.15s ease;
+}
+
+.estado-btn .caret.open {
+  transform: rotate(180deg);
+}
+
+.estado-menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 20;
+  min-width: 160px;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  /* El dd padre usa white-space: pre-wrap (heredado); se neutraliza aquí */
+  white-space: normal;
+  text-align: left;
+}
+
+.estado-menu li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.estado-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.estado-item:hover {
+  background: var(--color-background-mute);
+}
+
+.estado-item.active {
+  font-weight: 600;
+}
+
+.estado-item .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.estado-item .check {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Resumen a todo el ancho: etiqueta a un extremo, valor al otro extremo */
 .fields.resumen {
   grid-template-columns: 1fr;
@@ -1628,6 +1835,28 @@ button.danger:hover {
   color: #ffab00;
 }
 
+.ticket-desglose {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.02));
+}
+
+.ticket-desglose .ticket-row > span:first-child {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ticket-desglose .ticket-row strong {
+  font-weight: 700;
+}
+
+.ticket-desglose .adelanto-valor {
+  color: #ffab00;
+}
+
 .ticket-adjunto {
   display: flex;
   flex-direction: column;
@@ -1782,6 +2011,12 @@ button.danger:hover {
 @media (max-width: 640px) {
   .ticket-capture {
     margin: 0;
+  }
+
+  /* Menú de estado: anclado a la derecha para no desbordar en el eje X */
+  .estado-menu {
+    left: auto;
+    right: 0;
   }
 }
 </style>

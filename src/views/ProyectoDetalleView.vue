@@ -15,6 +15,7 @@ import {
   IconDeviceIpadHorizontalUp,
   IconDeviceMobile,
   IconDeviceDesktop,
+  IconDeviceFloppy,
   IconEdit,
   IconEye,
   IconEyeOff,
@@ -208,9 +209,55 @@ async function cambiarEstado(estado: Proyecto['estado']) {
   }
 }
 
+// ---- Progreso (slider flotante) ----
+const progresoRef = ref<HTMLElement | null>(null)
+const progresoMenuOpen = ref(false)
+const cambiandoProgreso = ref(false)
+const progresoDraft = ref(0)
+
+/** Rellena la parte izquierda del slider con el color del tema según el valor */
+const progresoStyle = computed(() => ({
+  background: `linear-gradient(to right, var(--color-primary) ${progresoDraft.value}%, var(--color-border) ${progresoDraft.value}%)`,
+}))
+
+function toggleProgresoMenu() {
+  if (cambiandoProgreso.value) return
+  if (!progresoMenuOpen.value) {
+    progresoDraft.value = Number(proyecto.value?.progreso) || 0
+  }
+  progresoMenuOpen.value = !progresoMenuOpen.value
+}
+
+async function guardarProgreso() {
+  if (!proyecto.value) return
+  const valor = Math.min(100, Math.max(0, Math.round(Number(progresoDraft.value) || 0)))
+  if (valor === (Number(proyecto.value.progreso) || 0)) {
+    progresoMenuOpen.value = false
+    return
+  }
+  cambiandoProgreso.value = true
+  error.value = ''
+  try {
+    proyecto.value = await updateProyecto(proyecto.value.id, { progreso: valor })
+    editForm.value.progreso = String(valor)
+    progresoMenuOpen.value = false
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al actualizar el progreso'
+  } finally {
+    cambiandoProgreso.value = false
+  }
+}
+
 function onDocClick(e: MouseEvent) {
   if (estadoMenuOpen.value && estadoRef.value && !estadoRef.value.contains(e.target as Node)) {
     estadoMenuOpen.value = false
+  }
+  if (
+    progresoMenuOpen.value &&
+    progresoRef.value &&
+    !progresoRef.value.contains(e.target as Node)
+  ) {
+    progresoMenuOpen.value = false
   }
 }
 
@@ -290,6 +337,11 @@ const comprobanteFiles = computed(() =>
 function ticketMonto(p: Pago): number {
   if (p.que_es !== 'deuda') return Number(p.monto) || 0
   return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
+}
+
+/** ¿La deuda tiene un adelanto parcial? */
+function tieneAdelanto(p: Pago): boolean {
+  return p.que_es === 'deuda' && (Number(p.adelanto) || 0) > 0
 }
 
 // Filtro: mostrar solo deudas pendientes
@@ -657,7 +709,60 @@ onMounted(load)
           <div><dt>Total</dt><dd class="total"><Monto :value="proyecto.total" /></dd></div>
           <div><dt>Adelanto</dt><dd><Monto :value="totalAdelanto" /></dd></div>
           <div><dt>Restante</dt><dd class="restante"><Monto :value="restante" /></dd></div>
-          <div><dt>Progreso</dt><dd>{{ Number(proyecto.progreso) || 0 }}%</dd></div>
+          <div>
+            <dt>Progreso</dt>
+            <dd class="progreso-dd">
+              <div ref="progresoRef" class="progreso-wrap">
+                <button
+                  type="button"
+                  class="progreso-btn"
+                  :disabled="cambiandoProgreso"
+                  title="Cambiar progreso"
+                  aria-haspopup="true"
+                  :aria-expanded="progresoMenuOpen"
+                  @click="toggleProgresoMenu"
+                >
+                  <IconLoader v-if="cambiandoProgreso" :size="13" class="spin" />
+                  {{ Number(proyecto.progreso) || 0 }}%
+                  <IconChevronDown
+                    :size="14"
+                    class="caret"
+                    :class="{ open: progresoMenuOpen }"
+                  />
+                </button>
+
+                <div v-if="progresoMenuOpen" class="progreso-menu">
+                  <div class="progreso-valor">{{ progresoDraft }}%</div>
+                  <input
+                    v-model.number="progresoDraft"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    class="progreso-range"
+                    :style="progresoStyle"
+                    aria-label="Progreso del proyecto"
+                  />
+                  <div class="progreso-actions">
+                    <button type="button" class="ghost" @click="progresoDraft = 0">0%</button>
+                    <button type="button" class="ghost" @click="progresoDraft = 50">50%</button>
+                    <button type="button" class="ghost" @click="progresoDraft = 100">100%</button>
+                    <button
+                      type="button"
+                      class="primary"
+                      :disabled="cambiandoProgreso"
+                      title="Guardar"
+                      aria-label="Guardar"
+                      @click="guardarProgreso"
+                    >
+                      <IconLoader v-if="cambiandoProgreso" :size="16" class="spin" />
+                      <IconDeviceFloppy v-else :size="16" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </dd>
+          </div>
           <div>
             <dt>Estado</dt>
             <dd class="estado-dd">
@@ -705,8 +810,8 @@ onMounted(load)
           </div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(proyecto.fecha_inicio) }}</dd></div>
           <div><dt>Fecha final</dt><dd>{{ formatDate(proyecto.fecha_final) }}</dd></div>
-          <div><dt>Descripción</dt><dd>{{ proyecto.descripcion || '—' }}</dd></div>
-          <div><dt>Observaciones</dt><dd>{{ proyecto.observaciones || '—' }}</dd></div>
+          <div class="long"><dt>Descripción</dt><dd>{{ proyecto.descripcion || '—' }}</dd></div>
+          <div class="long"><dt>Observaciones</dt><dd>{{ proyecto.observaciones || '—' }}</dd></div>
         </dl>
       </section>
 
@@ -823,7 +928,7 @@ onMounted(load)
           </form>
         </Modal>
 
-        <Modal v-if="showPagoForm" title="Primer adelanto" @close="showPagoForm = false">
+        <Modal v-if="showPagoForm" title="Primer adelanto" size="sm" @close="showPagoForm = false">
           <form class="form" @submit.prevent="guardarPago">
             <div class="grid">
               <label>
@@ -866,35 +971,38 @@ onMounted(load)
               <button class="pago-item" type="button" @click="openPagoDetalle(pago)">
                 <strong class="monto"><Monto :value="pago.monto" /></strong>
                 <span class="pago-sep">·</span>
-                <span class="pago-desc">{{ pago.observaciones || '' }}</span>
-                <span v-if="pago.que_es === 'deuda'" class="que-es-badge">Deuda</span>
-                <span
-                  v-if="pago.metodo_pago && pago.estado !== 'pendiente'"
-                  class="metodo-badge"
-                  :style="{ color: metodoInfo(pago.metodo_pago).color, background: metodoInfo(pago.metodo_pago).bg }"
-                >
-                  <component :is="metodoInfo(pago.metodo_pago).icon" :size="14" />
-                  {{ pago.metodo_pago }}
+                <span v-if="pago.observaciones" class="pago-desc">{{ pago.observaciones }}</span>
+                <span class="pago-tags">
+                  <span v-if="pago.que_es === 'deuda'" class="que-es-badge">Deuda</span>
+                  <span
+                    v-if="pago.metodo_pago && pago.estado !== 'pendiente'"
+                    class="metodo-badge"
+                    :style="{ color: metodoInfo(pago.metodo_pago).color, background: metodoInfo(pago.metodo_pago).bg }"
+                  >
+                    <component :is="metodoInfo(pago.metodo_pago).icon" :size="14" />
+                    {{ pago.metodo_pago }}
+                  </span>
+                  <a
+                    v-for="file in getComprobanteFiles(pago)"
+                    :key="file.name"
+                    class="adjunto"
+                    :href="file.url"
+                    target="_blank"
+                    rel="noopener"
+                    :title="`Abrir ${file.name}`"
+                    @click.stop
+                  >
+                    <IconPaperclip :size="16" />
+                  </a>
                 </span>
-                <a
-                  v-for="file in getComprobanteFiles(pago)"
-                  :key="file.name"
-                  class="adjunto"
-                  :href="file.url"
-                  target="_blank"
-                  rel="noopener"
-                  :title="`Abrir ${file.name}`"
-                  @click.stop
-                >
-                  <IconPaperclip :size="16" />
-                </a>
               </button>
               <span class="pago-fecha">
                 <IconCalendar :size="13" />
                 {{ formatFechaHora(pago.fecha) }}
               </span>
               <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
-                Adelanto: <Monto :value="pago.adelanto" />
+                <span class="pa-label">Adelanto:</span>
+                <Monto :value="pago.adelanto" />
               </span>
             </div>
             <span
@@ -1006,6 +1114,17 @@ onMounted(load)
               </div>
               <div class="ticket-monto" :class="{ deuda: selectedPago.que_es === 'deuda' }">
                 <span class="ticket-moneda">S/</span> {{ ticketMonto(selectedPago).toFixed(2) }}
+              </div>
+
+              <div v-if="tieneAdelanto(selectedPago)" class="ticket-desglose">
+                <div class="ticket-row">
+                  <span><IconCoin :size="14" /> Monto total</span>
+                  <strong><Monto :value="selectedPago.monto" /></strong>
+                </div>
+                <div class="ticket-row">
+                  <span><IconCash :size="14" /> Adelanto</span>
+                  <strong class="adelanto-valor"><Monto :value="selectedPago.adelanto" /></strong>
+                </div>
               </div>
 
               <div class="ticket-sep"></div>
@@ -1280,13 +1399,11 @@ button.danger:hover {
 }
 
 .fields .total {
-  font-size: 1.4rem;
   font-weight: 700;
   color: var(--color-primary-dark);
 }
 
 .fields .restante {
-  font-size: 1.4rem;
   font-weight: 700;
   color: #e5484d;
 }
@@ -1385,6 +1502,124 @@ button.danger:hover {
 .estado-item .check {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* Selector de progreso (slider flotante) */
+.progreso-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.progreso-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.progreso-btn:hover {
+  filter: brightness(0.96);
+}
+
+.progreso-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.progreso-btn .caret {
+  transition: transform 0.15s ease;
+}
+
+.progreso-btn .caret.open {
+  transform: rotate(180deg);
+}
+
+.progreso-menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 20;
+  width: 230px;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  /* El dd padre usa white-space: pre-wrap (heredado); se neutraliza aquí */
+  white-space: normal;
+  text-align: left;
+}
+
+.progreso-valor {
+  margin-bottom: 0.5rem;
+  font-size: 1.4rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--color-primary-dark);
+}
+
+.progreso-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-border);
+  cursor: pointer;
+}
+
+.progreso-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.progreso-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.progreso-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.progreso-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.progreso-actions button {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.progreso-actions .primary {
+  margin-left: auto;
 }
 
 .fields .full {
@@ -1565,6 +1800,15 @@ button.danger:hover {
   white-space: nowrap;
 }
 
+/* Contenedor de chips y adjuntos del pago (en fila en celular) */
+.pago-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
 .adjunto {
   display: inline-flex;
   align-items: center;
@@ -1730,6 +1974,28 @@ button.danger:hover {
   color: #ffab00;
 }
 
+.ticket-desglose {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.02));
+}
+
+.ticket-desglose .ticket-row > span:first-child {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ticket-desglose .ticket-row strong {
+  font-weight: 700;
+}
+
+.ticket-desglose .adelanto-valor {
+  color: #ffab00;
+}
+
 .ticket-adjunto {
   display: flex;
   flex-direction: column;
@@ -1811,6 +2077,151 @@ button.danger:hover {
 @media (max-width: 640px) {
   .ticket-capture {
     margin: 0;
+  }
+
+  /* ---- Card de información del proyecto ----
+     Cada campo en una fila: etiqueta a la izquierda, valor a la derecha */
+  .fields {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .fields > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .fields > div > dd {
+    margin: 0;
+    text-align: right;
+  }
+
+  /* Campos de texto largo: etiqueta arriba, valor debajo */
+  .fields > div.long {
+    display: block;
+  }
+
+  .fields > div.long > dd {
+    text-align: left;
+    margin-top: 0.3rem;
+  }
+
+  /* Menú de estado: anclado a la derecha para no desbordar en el eje X */
+  .estado-menu {
+    left: auto;
+    right: 0;
+  }
+
+  /* Slider de progreso: anclado a la derecha para no desbordar en el eje X */
+  .progreso-menu {
+    left: auto;
+    right: 0;
+  }
+
+  /* ---- Lista de pagos (patrón móvil de CobroView) ---- */
+  .list li {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    padding: 0.85rem;
+  }
+
+  /* Aplanar los wrappers para tratar cada dato como una fila independiente */
+  .pago-wrap,
+  .pago-item {
+    display: contents;
+  }
+
+  /* Monto como título */
+  .list li .monto {
+    order: 1;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--color-primary-dark);
+  }
+
+  .list li .pago-sep {
+    display: none;
+  }
+
+  /* Filas de datos: etiqueta | valor */
+  .list li .pago-desc,
+  .list li .pago-fecha,
+  .list li .pago-adelanto {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    width: 100%;
+    font-size: 0.85rem;
+    font-style: normal;
+    font-weight: 400;
+    color: #6e7781;
+  }
+
+  .list li .pago-desc {
+    order: 2;
+    text-align: right;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .list li .pago-fecha {
+    order: 3;
+  }
+
+  .list li .pago-adelanto {
+    order: 4;
+  }
+
+  .list li .pago-desc::before,
+  .list li .pago-fecha::before,
+  .list li .pago-adelanto .pa-label {
+    margin-right: auto;
+    flex-shrink: 0;
+  }
+
+  .list li .pago-desc::before {
+    content: 'Descripción';
+  }
+
+  .list li .pago-fecha::before {
+    content: 'Fecha';
+  }
+
+  /* Chips (Deuda / método) y adjuntos en una fila */
+  .list li .pago-tags {
+    order: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+  }
+
+  /* Estado alineado a la derecha */
+  .list li > .badge {
+    order: 6;
+    align-self: flex-end;
+  }
+
+  /* Botones a ancho completo */
+  .list li > .realizar-pago {
+    order: 7;
+    width: 100%;
+  }
+
+  .list li > .edit-pago {
+    order: 8;
+    width: 100%;
+    gap: 0.4rem;
+  }
+
+  .list li > .edit-pago::after {
+    content: 'Editar';
   }
 }
 </style>

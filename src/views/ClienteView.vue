@@ -137,7 +137,7 @@ async function crear() {
 <template>
   <main>
     <div class="head">
-      <h1>Clientes</h1>
+      <h1><IconUsers :size="26" /> Clientes</h1>
       <button class="primary" @click="showForm = true">
         <IconPlus :size="18" />
         Nuevo cliente
@@ -260,6 +260,14 @@ async function crear() {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.5rem;
 }
 
 .search-bar {
@@ -416,15 +424,17 @@ button.danger {
 
 .card-stats {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 1rem;
+  row-gap: 0.35rem;
   color: var(--color-text-2);
   font-size: 0.85rem;
 }
 
 .stats-row {
-  display: flex;
-  gap: 1rem;
+  display: contents;
 }
 
 .stat {
@@ -447,6 +457,17 @@ button.danger {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .card-stats {
+    column-gap: 0.75rem;
+    font-size: 0.8rem;
   }
 }
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { IconPlus, IconLoader, IconFolder, IconEye, IconEyeOff, IconUser, IconFlag } from '@tabler/icons-vue'
+import { IconPlus, IconLoader, IconFolder, IconEye, IconEyeOff, IconUser, IconFlag, IconSearch, IconEraser } from '@tabler/icons-vue'
 import {
   listProyectos,
   createProyecto,
@@ -53,6 +53,27 @@ const filtroCliente = ref('')
 // Filtro por estado (por defecto: activos)
 const filtroEstado = ref<Proyecto['estado']>('activo')
 
+// ---- Búsqueda por texto ----
+const busqueda = ref('')
+
+/** Normaliza texto para comparar (minúsculas, sin tildes) */
+function normalizar(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+/** Términos de búsqueda (separados por espacios) */
+const terminos = computed(() => normalizar(busqueda.value).split(/\s+/).filter(Boolean))
+
+function limpiarBusqueda() {
+  busqueda.value = ''
+}
+
+const hayBusqueda = computed(() => terminos.value.length > 0)
+
 /** Clientes ordenados alfabéticamente para el selector */
 const clientesOrdenados = computed(() =>
   [...clientes.value].sort((a, b) =>
@@ -60,14 +81,17 @@ const clientesOrdenados = computed(() =>
   ),
 )
 
-/** Proyectos visibles según el cliente y el estado seleccionados */
-const proyectosFiltrados = computed(() =>
-  proyectos.value.filter(
-    (p) =>
-      (!filtroCliente.value || p.cliente_id === filtroCliente.value) &&
-      p.estado === filtroEstado.value,
-  ),
-)
+/** Proyectos visibles según el cliente, el estado y los términos de búsqueda */
+const proyectosFiltrados = computed(() => {
+  const t = terminos.value
+  return proyectos.value.filter((p) => {
+    if (filtroCliente.value && p.cliente_id !== filtroCliente.value) return false
+    if (p.estado !== filtroEstado.value) return false
+    if (t.length === 0) return true
+    const texto = normalizar(`${p.proyecto ?? ''} ${p.descripcion ?? ''}`)
+    return t.every((term) => texto.includes(term))
+  })
+})
 
 async function load() {
   loading.value = true
@@ -160,7 +184,7 @@ async function guardar() {
 <template>
   <main>
     <div class="head">
-      <h1>Proyectos</h1>
+      <h1><IconFolder :size="26" /> Proyectos</h1>
       <div class="head-actions">
         <button
           class="ghost"
@@ -260,6 +284,22 @@ async function guardar() {
 
     <p v-if="error" class="error">{{ error }}</p>
 
+    <!-- Buscador -->
+    <div class="search-bar">
+      <input
+        v-model="busqueda"
+        type="text"
+        placeholder="Buscar por proyecto o descripción…"
+        aria-label="Buscar proyectos"
+      />
+      <button class="search-btn" type="button" title="Buscar" @click="busqueda = busqueda.trim()">
+        <IconSearch :size="18" />
+      </button>
+      <button class="clear-btn" type="button" title="Limpiar" @click="limpiarBusqueda">
+        <IconEraser :size="18" />
+      </button>
+    </div>
+
     <div class="filter-bar">
       <label class="filter-field">
         <IconUser :size="16" />
@@ -290,6 +330,10 @@ async function guardar() {
 
     <p v-else-if="proyectos.length === 0" class="muted">
       <IconFolder :size="16" /> No hay proyectos registrados.
+    </p>
+
+    <p v-else-if="proyectosFiltrados.length === 0 && hayBusqueda" class="muted">
+      <IconSearch :size="16" /> Sin resultados para “{{ busqueda }}”.
     </p>
 
     <div v-else-if="proyectosFiltrados.length === 0" class="empty-state">
@@ -339,6 +383,14 @@ async function guardar() {
   gap: 1rem;
 }
 
+.head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.5rem;
+}
+
 .head-actions {
   display: flex;
   gap: 0.5rem;
@@ -363,7 +415,56 @@ async function guardar() {
   }
 }
 
-/* Filtro por cliente */
+/* Buscador */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: hsl(var(--primary) / 0.6);
+}
+
+.search-btn,
+.clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.search-btn:hover {
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
+}
+
+.clear-btn:hover {
+  background: rgba(229, 72, 77, 0.1);
+  color: #e5484d;
+}
+
+/* Filtros por cliente y estado */
 .filter-bar {
   display: flex;
   align-items: center;
