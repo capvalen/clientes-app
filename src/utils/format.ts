@@ -76,6 +76,43 @@ export function formatDate(value: string | null | undefined): string {
   return `${dd}/${mm}/${yyyy}`
 }
 
+/**
+ * Compara dos fechas por su parte de FECHA (ignora la hora).
+ * Devuelve true si ambas existen y son el mismo día.
+ */
+export function mismaFecha(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a || !b) return false
+  const pa = pbDateParts(a)
+  const pb = pbDateParts(b)
+  if (pa && pb) {
+    return pa.y === pb.y && pa.m === pb.m && pa.d === pb.d
+  }
+  const da = new Date(a)
+  const db = new Date(b)
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  )
+}
+
+/**
+ * Formatea el "Día máx." de un servicio/proyecto.
+ * Si la fecha final coincide con la fecha de inicio, devuelve "-" (no hay margen).
+ */
+export function formatDiaMax(
+  fechaFinal: string | null | undefined,
+  fechaInicio: string | null | undefined,
+): string {
+  if (!fechaFinal) return '—'
+  if (mismaFecha(fechaFinal, fechaInicio)) return '-'
+  return formatDate(fechaFinal)
+}
+
 /** Formatea una fecha con hora a dd/MM/YYYY hh:mm a (12h con AM/PM) */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—'

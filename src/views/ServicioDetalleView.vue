@@ -44,8 +44,15 @@ import {
   type Servicio,
   type Pago,
   type Cliente,
+  type Periocidad,
 } from '../api/pocketbase'
-import { capitalize, formatDate, formatFechaCorta, pbDateTime, upperFirst } from '../utils/format'
+import {
+  formatDate,
+  formatDiaMax,
+  formatFechaCorta,
+  pbDateTime,
+  upperFirst,
+} from '../utils/format'
 import { sumarPeriocidad, PERIOCIDAD_LABEL } from '../utils/cuotas'
 import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
@@ -80,9 +87,7 @@ const editForm = ref({
   servicio: '',
   descripcion: '',
   total: '',
-  periocidad: 'mensual',
-  duracion_dias: '0',
-  estado: 'activo',
+  periocidad: 'mensual' as Periocidad,
   fecha_inicio: '',
   fecha_final: '',
   observaciones: '',
@@ -95,8 +100,6 @@ function startEdit() {
     descripcion: servicio.value.descripcion ?? '',
     total: String(servicio.value.total ?? ''),
     periocidad: servicio.value.periocidad ?? 'mensual',
-    duracion_dias: String(servicio.value.duracion_dias ?? 0),
-    estado: servicio.value.estado ?? 'activo',
     // PocketBase devuelve datetime completo; el input date necesita YYYY-MM-DD
     fecha_inicio: (servicio.value.fecha_inicio ?? '').slice(0, 10),
     fecha_final: (servicio.value.fecha_final ?? '').slice(0, 10),
@@ -114,9 +117,7 @@ async function saveEdit() {
       servicio: editForm.value.servicio,
       descripcion: editForm.value.descripcion,
       total: Number(editForm.value.total) || 0,
-      periocidad: editForm.value.periocidad as Servicio['periocidad'],
-      duracion_dias: Number(editForm.value.duracion_dias) || 0,
-      estado: editForm.value.estado as Servicio['estado'],
+      periocidad: editForm.value.periocidad,
       fecha_inicio: editForm.value.fecha_inicio ? pbDateTime(editForm.value.fecha_inicio) : '',
       fecha_final: editForm.value.fecha_final ? pbDateTime(editForm.value.fecha_final) : '',
       observaciones: editForm.value.observaciones,
@@ -172,17 +173,17 @@ function pagoInfo(estado: string) {
   return ESTADO_PAGO[estado] ?? { label: estado, color: '#6e7781', bg: '#eaeef2' }
 }
 
-// ---- Estado del servicio (selector desplegable) ----
+// ---- Estado del servicio (selector desplegable, actualización inmediata) ----
 const ESTADO_SERVICIO: Record<string, { label: string; color: string; bg: string }> = {
   activo: { label: 'Activo', color: '#1a7f37', bg: '#dafbe1' },
   inactivo: { label: 'Inactivo', color: '#6e7781', bg: '#eaeef2' },
-  suspendido: { label: 'Suspendido', color: '#9a6700', bg: '#fff8c5' },
+  suspendido: { label: 'Suspendido', color: '#e5484d', bg: '#ffebe9' },
 }
 
 function servicioEstadoInfo(estado: string) {
   return (
     ESTADO_SERVICIO[estado] ?? {
-      label: capitalize(estado),
+      label: estado,
       color: '#6e7781',
       bg: '#eaeef2',
     }
@@ -195,9 +196,11 @@ const cambiandoEstado = ref(false)
 
 function toggleEstadoMenu() {
   if (cambiandoEstado.value) return
+  periocidadMenuOpen.value = false
   estadoMenuOpen.value = !estadoMenuOpen.value
 }
 
+/** Cambia el estado del servicio y lo guarda en la BD */
 async function cambiarEstado(estado: Servicio['estado']) {
   estadoMenuOpen.value = false
   if (!servicio.value || servicio.value.estado === estado) return
@@ -205,7 +208,6 @@ async function cambiarEstado(estado: Servicio['estado']) {
   error.value = ''
   try {
     servicio.value = await updateServicio(servicio.value.id, { estado })
-    editForm.value.estado = estado
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al cambiar el estado'
   } finally {
@@ -213,9 +215,44 @@ async function cambiarEstado(estado: Servicio['estado']) {
   }
 }
 
+// ---- Periocidad del servicio (selector desplegable, actualización inmediata) ----
+const periocidadRef = ref<HTMLElement | null>(null)
+const periocidadMenuOpen = ref(false)
+const cambiandoPeriocidad = ref(false)
+
+function togglePeriocidadMenu() {
+  if (cambiandoPeriocidad.value) return
+  estadoMenuOpen.value = false
+  periocidadMenuOpen.value = !periocidadMenuOpen.value
+}
+
+/** Cambia la periocidad del servicio y la guarda en la BD */
+async function cambiarPeriocidad(periocidad: Periocidad) {
+  periocidadMenuOpen.value = false
+  if (!servicio.value || servicio.value.periocidad === periocidad) return
+  cambiandoPeriocidad.value = true
+  error.value = ''
+  try {
+    servicio.value = await updateServicio(servicio.value.id, { periocidad })
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al cambiar la periocidad'
+  } finally {
+    cambiandoPeriocidad.value = false
+  }
+}
+
+/** Cierra los desplegables al hacer clic fuera de ellos */
 function onDocClick(e: MouseEvent) {
-  if (estadoMenuOpen.value && estadoRef.value && !estadoRef.value.contains(e.target as Node)) {
+  const target = e.target as Node
+  if (estadoMenuOpen.value && estadoRef.value && !estadoRef.value.contains(target)) {
     estadoMenuOpen.value = false
+  }
+  if (
+    periocidadMenuOpen.value &&
+    periocidadRef.value &&
+    !periocidadRef.value.contains(target)
+  ) {
+    periocidadMenuOpen.value = false
   }
 }
 
@@ -705,7 +742,47 @@ onMounted(load)
       <section class="card">
         <dl class="fields">
           <div><dt>Total</dt><dd class="total">{{ monto(servicio.total) }}</dd></div>
-          <div><dt>Periocidad</dt><dd>{{ PERIOCIDAD_LABEL[servicio.periocidad] }}</dd></div>
+          <div>
+            <dt>Periocidad</dt>
+            <dd class="estado-dd">
+              <div ref="periocidadRef" class="estado-wrap">
+                <button
+                  type="button"
+                  class="estado-btn primario"
+                  :disabled="cambiandoPeriocidad"
+                  title="Cambiar periocidad"
+                  aria-haspopup="listbox"
+                  :aria-expanded="periocidadMenuOpen"
+                  @click="togglePeriocidadMenu"
+                >
+                  <IconLoader v-if="cambiandoPeriocidad" :size="13" class="spin" />
+                  {{ PERIOCIDAD_LABEL[servicio.periocidad] }}
+                  <IconChevronDown
+                    :size="14"
+                    class="caret"
+                    :class="{ open: periocidadMenuOpen }"
+                  />
+                </button>
+
+                <ul v-if="periocidadMenuOpen" class="estado-menu" role="listbox">
+                  <li v-for="(label, key) in PERIOCIDAD_LABEL" :key="key">
+                    <button
+                      type="button"
+                      class="estado-item"
+                      :class="{ active: servicio.periocidad === key }"
+                      role="option"
+                      :aria-selected="servicio.periocidad === key"
+                      @click="cambiarPeriocidad(key as Periocidad)"
+                    >
+                      <span class="dot" :style="{ background: 'var(--color-primary)' }"></span>
+                      {{ label }}
+                      <IconCheck v-if="servicio.periocidad === key" :size="14" class="check" />
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </dd>
+          </div>
           <div>
             <dt>Estado</dt>
             <dd class="estado-dd">
@@ -752,7 +829,7 @@ onMounted(load)
             </dd>
           </div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(servicio.fecha_inicio) }}</dd></div>
-          <div><dt>Fecha final</dt><dd>{{ formatDate(servicio.fecha_final) }}</dd></div>
+          <div><dt>Día Max.</dt><dd>{{ formatDiaMax(servicio.fecha_final, servicio.fecha_inicio) }}</dd></div>
         </dl>
         <dl class="fields fields-2col">
           <div><dt>Descripción</dt><dd>{{ servicio.descripcion || '—' }}</dd></div>
@@ -778,23 +855,9 @@ onMounted(load)
             <label>
               Periocidad
               <select v-model="editForm.periocidad">
-                <option value="diario">Diario</option>
-                <option value="semanal">Semanal</option>
-                <option value="mensual">Mensual</option>
-                <option value="bianual">Bianual</option>
-                <option value="anual">Anual</option>
-              </select>
-            </label>
-            <label>
-              Duración (días)
-              <input v-model="editForm.duracion_dias" type="number" min="0" step="1" />
-            </label>
-            <label>
-              Estado
-              <select v-model="editForm.estado">
-                <option value="activo">Activo</option>
-                <option value="inactivo">Inactivo</option>
-                <option value="suspendido">Suspendido</option>
+                <option v-for="(label, key) in PERIOCIDAD_LABEL" :key="key" :value="key">
+                  {{ label }}
+                </option>
               </select>
             </label>
             <label>
@@ -802,7 +865,7 @@ onMounted(load)
               <input v-model="editForm.fecha_inicio" type="date" />
             </label>
             <label>
-              Fecha final
+              Día Max.
               <input v-model="editForm.fecha_final" type="date" />
             </label>
             <label class="full">
@@ -1425,11 +1488,7 @@ button.danger:hover {
   color: #e5484d;
 }
 
-.fields .full {
-  grid-column: 1 / -1;
-}
-
-/* Selector de estado (desplegable) */
+/* Selector desplegable (Estado / Periocidad) */
 .estado-wrap {
   position: relative;
   display: inline-block;
@@ -1455,6 +1514,18 @@ button.danger:hover {
 .estado-btn:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+/* Variante con color primario (Periocidad) */
+.estado-btn.primario {
+  border-color: hsl(var(--primary) / 0.5);
+  background: hsl(var(--primary) / 0.15);
+  color: var(--color-primary-dark);
+}
+
+.estado-btn.primario:hover {
+  background: hsl(var(--primary) / 0.25);
+  filter: none;
 }
 
 .estado-btn .caret {
@@ -1523,6 +1594,10 @@ button.danger:hover {
 .estado-item .check {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.fields .full {
+  grid-column: 1 / -1;
 }
 
 /* Resumen a todo el ancho: etiqueta a un extremo, valor al otro extremo */

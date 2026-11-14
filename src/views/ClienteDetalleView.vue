@@ -8,11 +8,18 @@ import {
   IconEye,
   IconEyeOff,
   IconFolder,
+  IconId,
+  IconKey,
   IconLoader,
   IconLock,
   IconLockOpen,
+  IconMail,
+  IconMapPin,
   IconNotebook,
+  IconPhone,
   IconPlus,
+  IconToggleLeft,
+  IconToggleRight,
   IconTools,
   IconTrash,
   IconUser,
@@ -57,6 +64,14 @@ import { formatDate, truncate } from '../utils/format'
 import { showToast } from '../utils/toast'
 import { PERIOCIDAD_LABEL, fechasCuotas } from '../utils/cuotas'
 import { showMontos, monto, montoVisible, toggleMontos } from '../utils/montos'
+import {
+  LLAVE_PLAINA,
+  esCifrado,
+  parseSecretoItems,
+  primerCifrado,
+  serializeSecretoItems,
+  type SecretoItem,
+} from '../utils/secreto'
 import Modal from '../components/Modal.vue'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 
@@ -105,14 +120,18 @@ const notasPlanas = computed(() => notasDb.value.filter((n) => !n.oculto))
 /** Secretos (texto cifrado) */
 const secretos = computed(() => notasDb.value.filter((n) => n.oculto))
 
-/** Textos cifrados de un secreto (array JSON) */
-function secretoItems(nota: NotaRegistro): string[] {
-  try {
-    const value = JSON.parse(nota.dato || '[]')
-    return Array.isArray(value) ? value.map(String) : []
-  } catch {
-    return []
-  }
+/**
+ * Datos de un secreto.
+ * Cada item puede estar cifrado (sin `llave`) o ser texto plano (con `llave`).
+ */
+function secretoItems(nota: NotaRegistro): SecretoItem[] {
+  return parseSecretoItems(nota.dato)
+}
+
+/** Texto cifrado de un item (vacío si el item es texto plano) */
+function textoCifrado(nota: NotaRegistro, index: number): string {
+  const item = secretoItems(nota)[index]
+  return item && esCifrado(item) ? item.dato : ''
 }
 
 /** Contenido revelado: clave `${notaId}:${index}` -> texto plano */
@@ -284,11 +303,13 @@ const socioForm = ref({ nombre: '', celular: '', cargo: '', ubicacion: '' })
 const showNotaForm = ref(false)
 const notaForm = ref({ titulo: '', dato: '' })
 
-// Formulario de secreto (título + varios textos cifrados)
+// Formulario de secreto (título + varios datos, cada uno cifrado o plano)
 const showSecretoForm = ref(false)
-const secretoForm = ref({ titulo: '', textos: [''] })
-/** Indica si falta crear la clave maestra (al abrir el formulario de secreto) */
-const sinClaveMaestra = ref(false)
+/** `cifrado: true` -> el dato se guarda cifrado; `false` -> se guarda en texto plano */
+const secretoForm = ref<{ titulo: string; textos: { texto: string; cifrado: boolean }[] }>({
+  titulo: '',
+  textos: [{ texto: '', cifrado: true }],
+})
 
 // Prompt de clave maestra para revelar/editar secretos
 const showKeyPrompt = ref(false)
@@ -650,57 +671,100 @@ function eliminarNota(nota: NotaRegistro) {
   void borrarNota(nota)
 }
 
-/** Elimina un secreto: requiere la clave maestra */
+/** Elimina un secreto: requiere la clave maestra (solo si tiene algo cifrado) */
 function eliminarSecreto(secreto: NotaRegistro) {
   if (!confirm(`¿Eliminar "${secreto.titulo}"?`)) return
-  promptMasterKey(secretoItems(secreto)[0] ?? '', () => borrarNota(secreto))
+  // Si el secreto no tiene nada cifrado, no hace falta pedir la clave
+  const ref = primerCifrado(secretoItems(secreto))
+  if (!ref) {
+    void borrarNota(secreto)
+    return
+  }
+  promptMasterKey(ref, () => borrarNota(secreto))
 }
 
 // ---------- Secretos ----------
+/** Muestra el aviso de "falta clave maestra" con acceso a Opciones > Secretos */
+const showSinClaveModal = ref(false)
+
+/**
+ * Abre el modal de crear secreto, pero solo si ya existe una clave maestra.
+ * Si no existe, muestra el aviso con un botón hacia Opciones > Secretos.
+ */
 function openSecretoForm() {
-  secretoForm.value = { titulo: '', textos: [''] }
+  if (!hasMasterPassword()) {
+    showSinClaveModal.value = true
+    return
+  }
+  secretoForm.value = { titulo: '', textos: [{ texto: '', cifrado: true }] }
   error.value = ''
-  sinClaveMaestra.value = !hasMasterPassword()
   showSecretoForm.value = true
 }
 
+/** Lleva al usuario a Opciones > Secretos para crear la clave maestra */
+function irASecretos() {
+  showSinClaveModal.value = false
+  router.push('/opciones?tab=secretos')
+}
+
+/** Alterna el switch cifrado/plano de un dato */
+function toggleCifrado(index: number) {
+  const item = secretoForm.value.textos[index]
+  if (item) item.cifrado = !item.cifrado
+}
+
 function addTextoSecreto() {
-  secretoForm.value.textos.push('')
+  secretoForm.value.textos.push({ texto: '', cifrado: true })
 }
 
 function removeTextoSecreto(index: number) {
   secretoForm.value.textos.splice(index, 1)
-  if (secretoForm.value.textos.length === 0) secretoForm.value.textos.push('')
+  if (secretoForm.value.textos.length === 0)
+    secretoForm.value.textos.push({ texto: '', cifrado: true })
 }
 
-/** Cifra cada texto y guarda el secreto (oculto = true) */
+/**
+ * Cifra los datos marcados como secretos y guarda el registro (oculto = true).
+ * Los datos sin switch activo se guardan en texto plano (llevan la marca `llave`).
+ */
 async function crearSecreto() {
   if (!cliente.value || !secretoForm.value.titulo) return
-  const textos = secretoForm.value.textos.map((t) => t.trim()).filter(Boolean)
+  const textos = secretoForm.value.textos
+    .map((t) => ({ texto: t.texto.trim(), cifrado: t.cifrado }))
+    .filter((t) => t.texto.length > 0)
   if (textos.length === 0) {
-    error.value = 'Agrega al menos un texto secreto.'
+    error.value = 'Agrega al menos un dato.'
     return
   }
   const pass = getMasterPassword()
-  if (!pass) {
+  const hayCifrados = textos.some((t) => t.cifrado)
+  if (hayCifrados && !pass) {
     error.value = 'Aún no has creado tu clave maestra. Ve a Opciones para asignarla.'
     return
   }
   saving.value = true
   error.value = ''
   try {
-    const cifrados: string[] = []
-    for (const t of textos) cifrados.push(await encryptText(t, pass))
+    const items: SecretoItem[] = []
+    for (const t of textos) {
+      if (t.cifrado) {
+        if (!pass) continue
+        items.push({ dato: await encryptText(t.texto, pass) })
+      } else {
+        // Texto plano: se marca con `llave` para indicar que no está cifrado
+        items.push({ dato: t.texto, llave: LLAVE_PLAINA })
+      }
+    }
     const creado = await createNota({
       cliente_id: cliente.value.id,
       titulo: secretoForm.value.titulo,
-      dato: JSON.stringify(cifrados),
+      dato: serializeSecretoItems(items),
       dato_extra: '',
       oculto: true,
     })
     notasDb.value = [creado, ...notasDb.value]
     showSecretoForm.value = false
-    secretoForm.value = { titulo: '', textos: [''] }
+    secretoForm.value = { titulo: '', textos: [{ texto: '', cifrado: true }] }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al crear el secreto'
   } finally {
@@ -724,9 +788,9 @@ async function intentarDescifrar(
   }
 }
 
-/** Revela un texto del secreto (pide la clave si el desbloqueo expiró) */
+/** Revela un dato cifrado del secreto (pide la clave si el desbloqueo expiró) */
 function revelar(nota: NotaRegistro, index: number) {
-  const payload = secretoItems(nota)[index]
+  const payload = textoCifrado(nota, index)
   if (!payload) return
   promptMasterKey(payload, async () => {
     const pass = getMasterPassword()
@@ -738,30 +802,45 @@ function ocultarRevelado(nota: NotaRegistro, index: number) {
   delete revelados.value[revealKey(nota, index)]
 }
 
-/** Copia un texto del secreto al portapapeles (requiere la clave maestra) */
+/**
+ * Copia un dato del secreto al portapapeles.
+ * Los datos en texto plano se copian directamente; los cifrados requieren la clave maestra.
+ */
 function copiarSecreto(nota: NotaRegistro, index: number) {
-  const payload = secretoItems(nota)[index]
-  if (!payload) return
-  promptMasterKey(payload, async () => {
+  const item = secretoItems(nota)[index]
+  if (!item) return
+
+  // Dato en texto plano: no necesita clave
+  if (!esCifrado(item)) {
+    void copiarAlPortapapeles(item.dato)
+    return
+  }
+
+  promptMasterKey(item.dato, async () => {
     const pass = getMasterPassword()
     if (!pass) return
     // Usa el texto ya revelado si existe; si no, descifra SIN revelarlo en pantalla
     let texto = revelados.value[revealKey(nota, index)]
     if (texto === undefined) {
       try {
-        texto = await decryptText(payload, pass)
+        texto = await decryptText(item.dato, pass)
       } catch {
         showToast('No se pudo descifrar', 'error')
         return
       }
     }
-    try {
-      await navigator.clipboard.writeText(texto)
-      showToast('Copiado al portapapeles', 'success')
-    } catch {
-      showToast('No se pudo copiar', 'error')
-    }
+    await copiarAlPortapapeles(texto)
   })
+}
+
+/** Escribe un texto en el portapapeles notificando el resultado */
+async function copiarAlPortapapeles(texto: string) {
+  try {
+    await navigator.clipboard.writeText(texto)
+    showToast('Copiado al portapapeles', 'success')
+  } catch {
+    showToast('No se pudo copiar', 'error')
+  }
 }
 
 /**
@@ -831,57 +910,95 @@ async function saveNotaEdit() {
 }
 
 const editingSecretoId = ref<string | null>(null)
-const secretoEditForm = ref({ titulo: '', textos: [''] })
+/** Igual que el formulario de creación, cada dato indica si está cifrado */
+const secretoEditForm = ref<{
+  titulo: string
+  textos: { texto: string; cifrado: boolean }[]
+}>({ titulo: '', textos: [{ texto: '', cifrado: true }] })
 
-/** Abre la edición de un secreto (requiere la clave maestra) */
+/** Abre la edición de un secreto (requiere la clave maestra si tiene algo cifrado) */
 function openSecretoEdit(secreto: NotaRegistro) {
   const items = secretoItems(secreto)
-  promptMasterKey(items[0] ?? '', async () => {
+  const ref = primerCifrado(items)
+
+  const abrirEditor = async () => {
     const pass = getMasterPassword()
-    if (!pass) return
-    const textos: string[] = []
-    for (const c of items) {
+    const textos: { texto: string; cifrado: boolean }[] = []
+    for (const item of items) {
+      if (!esCifrado(item)) {
+        // Texto plano: se muestra tal cual
+        textos.push({ texto: item.dato, cifrado: false })
+        continue
+      }
+      if (!pass) {
+        textos.push({ texto: '', cifrado: true })
+        continue
+      }
       try {
-        textos.push(await decryptText(c, pass))
+        textos.push({ texto: await decryptText(item.dato, pass), cifrado: true })
       } catch {
-        textos.push('')
+        textos.push({ texto: '', cifrado: true })
       }
     }
-    if (textos.length === 0) textos.push('')
+    if (textos.length === 0) textos.push({ texto: '', cifrado: true })
     secretoEditForm.value = { titulo: secreto.titulo, textos }
     editingSecretoId.value = secreto.id
-  })
+  }
+
+  // Si no hay nada cifrado, se abre el editor sin pedir la clave
+  if (!ref) {
+    void abrirEditor()
+    return
+  }
+  promptMasterKey(ref, abrirEditor)
+}
+
+/** Alterna el switch cifrado/plano de un dato en edición */
+function toggleCifradoEdit(index: number) {
+  const item = secretoEditForm.value.textos[index]
+  if (item) item.cifrado = !item.cifrado
 }
 
 function addTextoSecretoEdit() {
-  secretoEditForm.value.textos.push('')
+  secretoEditForm.value.textos.push({ texto: '', cifrado: true })
 }
 
 function removeTextoSecretoEdit(index: number) {
   secretoEditForm.value.textos.splice(index, 1)
-  if (secretoEditForm.value.textos.length === 0) secretoEditForm.value.textos.push('')
+  if (secretoEditForm.value.textos.length === 0)
+    secretoEditForm.value.textos.push({ texto: '', cifrado: true })
 }
 
 async function saveSecretoEdit() {
   if (!editingSecretoId.value) return
   const pass = getMasterPassword()
-  if (!pass) {
-    error.value = 'Aún no has creado tu clave maestra. Ve a Opciones para asignarla.'
+  const textos = secretoEditForm.value.textos
+    .map((t) => ({ texto: t.texto.trim(), cifrado: t.cifrado }))
+    .filter((t) => t.texto.length > 0)
+  if (textos.length === 0) {
+    error.value = 'Agrega al menos un dato.'
     return
   }
-  const textos = secretoEditForm.value.textos.map((t) => t.trim()).filter(Boolean)
-  if (textos.length === 0) {
-    error.value = 'Agrega al menos un texto secreto.'
+  const hayCifrados = textos.some((t) => t.cifrado)
+  if (hayCifrados && !pass) {
+    error.value = 'Aún no has creado tu clave maestra. Ve a Opciones para asignarla.'
     return
   }
   saving.value = true
   error.value = ''
   try {
-    const cifrados: string[] = []
-    for (const t of textos) cifrados.push(await encryptText(t, pass))
+    const items: SecretoItem[] = []
+    for (const t of textos) {
+      if (t.cifrado) {
+        if (!pass) continue
+        items.push({ dato: await encryptText(t.texto, pass) })
+      } else {
+        items.push({ dato: t.texto, llave: LLAVE_PLAINA })
+      }
+    }
     const updated = await updateNota(editingSecretoId.value, {
       titulo: secretoEditForm.value.titulo,
-      dato: JSON.stringify(cifrados),
+      dato: serializeSecretoItems(items),
       oculto: true,
     })
     notasDb.value = notasDb.value.map((n) => (n.id === updated.id ? updated : n))
@@ -930,11 +1047,39 @@ async function saveSecretoEdit() {
 
       <!-- Datos generales -->
       <section v-if="!editing" class="card">
-        <dl class="fields">
-          <div><dt>Celular</dt><dd>{{ cliente.celular || '—' }}</dd></div>
-          <div><dt>RUC</dt><dd>{{ cliente.ruc || '—' }}</dd></div>
-          <div><dt>Email</dt><dd>{{ cliente.email || '—' }}</dd></div>
-          <div><dt>Dirección</dt><dd>{{ cliente.direccion || '—' }}</dd></div>
+        <dl class="fields datos-card">
+          <div class="dato">
+            <dt><IconPhone :size="16" /> <span>Celular</span></dt>
+            <dd>
+              <a v-if="cliente.celular" :href="`tel:${cliente.celular}`" class="dato-link">
+                {{ cliente.celular }}
+              </a>
+              <span v-else class="dato-vacio">—</span>
+            </dd>
+          </div>
+          <div class="dato">
+            <dt><IconId :size="16" /> <span>RUC</span></dt>
+            <dd>
+              <span v-if="cliente.ruc">{{ cliente.ruc }}</span>
+              <span v-else class="dato-vacio">—</span>
+            </dd>
+          </div>
+          <div class="dato">
+            <dt><IconMail :size="16" /> <span>Email</span></dt>
+            <dd>
+              <a v-if="cliente.email" :href="`mailto:${cliente.email}`" class="dato-link">
+                {{ cliente.email }}
+              </a>
+              <span v-else class="dato-vacio">—</span>
+            </dd>
+          </div>
+          <div class="dato dato-full">
+            <dt><IconMapPin :size="16" /> <span>Dirección</span></dt>
+            <dd>
+              <span v-if="cliente.direccion">{{ cliente.direccion }}</span>
+              <span v-else class="dato-vacio">—</span>
+            </dd>
+          </div>
         </dl>
       </section>
 
@@ -1128,6 +1273,27 @@ async function saveSecretoEdit() {
           </form>
         </Modal>
 
+        <!-- Aviso: no hay clave maestra creada -->
+        <Modal v-if="showSinClaveModal" title="Falta la clave maestra" size="sm" @close="showSinClaveModal = false">
+          <div class="sin-clave">
+            <p class="sin-clave-msg">
+              <IconKey :size="16" />
+              Aún no has creado una clave maestra. Ve a
+              <RouterLink to="/opciones?tab=secretos" @click="showSinClaveModal = false">
+                opciones
+              </RouterLink>.
+            </p>
+            <div class="row">
+              <button class="primary" type="button" @click="irASecretos">
+                <IconKey :size="18" /> Ir a Opciones → Secretos
+              </button>
+              <button class="ghost" type="button" @click="showSinClaveModal = false">
+                <IconX :size="18" /> Cancelar
+              </button>
+            </div>
+          </div>
+        </Modal>
+
         <!-- Nuevo secreto (varios textos cifrados) -->
         <Modal v-if="showSecretoForm" title="Crear secreto" size="sm" @close="showSecretoForm = false">
           <form class="form" @submit.prevent="crearSecreto">
@@ -1139,10 +1305,27 @@ async function saveSecretoEdit() {
             </div>
 
             <div class="secretos-form">
-              <label v-for="(_, i) in secretoForm.textos" :key="i" class="secreto-input">
-                <span class="dato-label"><IconLock :size="14" /> Dato {{ i + 1 }}</span>
+              <label v-for="(item, i) in secretoForm.textos" :key="i" class="secreto-input">
+                <span class="dato-label">
+                  <IconLock v-if="item.cifrado" :size="14" />
+                  <IconEye v-else :size="14" />
+                  Dato {{ i + 1 }}
+                </span>
                 <div class="secreto-input-row">
-                  <input v-model="secretoForm.textos[i]" type="text" />
+                  <input v-model="item.texto" type="text" />
+                  <button
+                    type="button"
+                    class="switch"
+                    :class="{ on: item.cifrado }"
+                    :title="item.cifrado ? 'Cifrado: activar para cifrar' : 'Visible: activar para cifrar'"
+                    :aria-pressed="item.cifrado"
+                    role="switch"
+                    @click="toggleCifrado(i)"
+                  >
+                    <IconToggleRight v-if="item.cifrado" :size="22" />
+                    <IconToggleLeft v-else :size="22" />
+                    <span class="switch-label">{{ item.cifrado ? 'Cifrado' : 'Visible' }}</span>
+                  </button>
                   <button
                     type="button"
                     class="danger icon-btn"
@@ -1158,12 +1341,9 @@ async function saveSecretoEdit() {
               </button>
             </div>
 
-            <p v-if="sinClaveMaestra" class="hint warn-hint">
-              Aún no has creado una clave maestra.
-              Ve a <RouterLink to="/opciones">Opciones</RouterLink> para asignarla.
-            </p>
-            <p v-else class="hint">
-              Los textos se cifran con tu clave maestra (AES-GCM).
+            <p class="hint">
+              Activa <strong>Cifrado</strong> para proteger un dato con tu clave maestra (AES-GCM).
+              Los datos <strong>Visible</strong> se guardan en texto plano y no piden la clave.
             </p>
 
             <p v-if="error" class="error">{{ error }}</p>
@@ -1227,27 +1407,34 @@ async function saveSecretoEdit() {
                   </div>
                 </div>
                 <div class="secreto-items">
-                  <div v-for="(_, i) in secretoItems(s)" :key="i" class="secreto-item">
-                    <span v-if="estaRevelado(s, i)" class="secreto-texto">
-                      {{ textoRevelado(s, i) }}
+                  <div v-for="(item, i) in secretoItems(s)" :key="i" class="secreto-item">
+                    <!-- Dato en texto plano: siempre visible -->
+                    <span v-if="!esCifrado(item)" class="secreto-texto plano">
+                      {{ item.dato }}
                     </span>
-                    <span v-else class="secreto-oculto">••••••••</span>
-                    <button
-                      v-if="!estaRevelado(s, i)"
-                      class="ghost reveal-btn"
-                      type="button"
-                      @click="revelar(s, i)"
-                    >
-                      <IconLockOpen :size="16" /> Revelar
-                    </button>
-                    <button
-                      v-else
-                      class="ghost reveal-btn"
-                      type="button"
-                      @click="ocultarRevelado(s, i)"
-                    >
-                      <IconLock :size="16" /> Ocultar
-                    </button>
+                    <!-- Dato cifrado -->
+                    <template v-else>
+                      <span v-if="estaRevelado(s, i)" class="secreto-texto">
+                        {{ textoRevelado(s, i) }}
+                      </span>
+                      <span v-else class="secreto-oculto">••••••••</span>
+                      <button
+                        v-if="!estaRevelado(s, i)"
+                        class="ghost reveal-btn"
+                        type="button"
+                        @click="revelar(s, i)"
+                      >
+                        <IconLockOpen :size="16" /> Revelar
+                      </button>
+                      <button
+                        v-else
+                        class="ghost reveal-btn"
+                        type="button"
+                        @click="ocultarRevelado(s, i)"
+                      >
+                        <IconLock :size="16" /> Ocultar
+                      </button>
+                    </template>
                     <button
                       class="ghost reveal-btn"
                       type="button"
@@ -1304,10 +1491,27 @@ async function saveSecretoEdit() {
             </div>
 
             <div class="secretos-form">
-              <label v-for="(_, i) in secretoEditForm.textos" :key="i" class="secreto-input">
-                <span class="dato-label"><IconLock :size="14" /> Dato {{ i + 1 }}</span>
+              <label v-for="(item, i) in secretoEditForm.textos" :key="i" class="secreto-input">
+                <span class="dato-label">
+                  <IconLock v-if="item.cifrado" :size="14" />
+                  <IconEye v-else :size="14" />
+                  Dato {{ i + 1 }}
+                </span>
                 <div class="secreto-input-row">
-                  <input v-model="secretoEditForm.textos[i]" type="text" />
+                  <input v-model="item.texto" type="text" />
+                  <button
+                    type="button"
+                    class="switch"
+                    :class="{ on: item.cifrado }"
+                    :title="item.cifrado ? 'Cifrado: activar para cifrar' : 'Visible: activar para cifrar'"
+                    :aria-pressed="item.cifrado"
+                    role="switch"
+                    @click="toggleCifradoEdit(i)"
+                  >
+                    <IconToggleRight v-if="item.cifrado" :size="22" />
+                    <IconToggleLeft v-else :size="22" />
+                    <span class="switch-label">{{ item.cifrado ? 'Cifrado' : 'Visible' }}</span>
+                  </button>
                   <button
                     type="button"
                     class="danger icon-btn"
@@ -1323,7 +1527,9 @@ async function saveSecretoEdit() {
               </button>
             </div>
 
-            <p class="hint">Al guardar, los textos se vuelven a cifrar con tu clave maestra.</p>
+            <p class="hint">
+              Al guardar, los datos <strong>Cifrado</strong> se vuelven a cifrar con tu clave maestra.
+            </p>
 
             <p v-if="error" class="error">{{ error }}</p>
             <div class="row">
@@ -1943,20 +2149,117 @@ async function saveSecretoEdit() {
   margin-left: auto;
 }
 
-.fields {
+/* Tarjeta de datos generales del cliente */
+.datos-card {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem 1rem;
   margin: 0;
 }
 
-.fields dt {
-  font-size: 0.8rem;
+.datos-card .dato {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  background: var(--color-background);
+}
+
+/* La dirección ocupa todo el ancho en pantallas anchas */
+.datos-card .dato-full {
+  grid-column: 1 / -1;
+}
+
+.datos-card dt {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--color-text-2);
 }
 
-.fields dd {
-  margin: 0.15rem 0 0;
+.datos-card dt svg {
+  flex-shrink: 0;
+  color: var(--color-primary-dark);
+}
+
+.datos-card dd {
+  margin: 0;
+  font-size: 0.95rem;
+  /* Los datos largos (emails, direcciones) no rompen el layout */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dato-link {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dato-link:hover {
+  text-decoration: underline;
+}
+
+.dato-vacio {
+  color: var(--color-text-2);
+}
+
+/* ---------- Móvil: una columna, tarjetas compactas ---------- */
+@media (max-width: 640px) {
+  /* Menos padding en la card para ganar ancho útil */
+  .card {
+    padding: 0.85rem;
+  }
+
+  .datos-card {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .datos-card .dato {
+    /* En móvil: icono + etiqueta a la izquierda, valor a la derecha */
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      'label label'
+      'value value';
+    align-items: center;
+    gap: 0.15rem 0.5rem;
+    padding: 0.6rem 0.7rem;
+  }
+
+  .datos-card dt {
+    grid-area: label;
+    font-size: 0.72rem;
+  }
+
+  .datos-card dd {
+    grid-area: value;
+    font-size: 0.95rem;
+  }
+}
+
+/* ---------- Móvil pequeño: etiqueta y valor en la misma línea ---------- */
+@media (max-width: 380px) {
+  .datos-card .dato {
+    grid-template-areas: 'label value';
+    align-items: baseline;
+  }
+
+  .datos-card dt {
+    font-size: 0.75rem;
+  }
+
+  .datos-card dd {
+    text-align: right;
+  }
 }
 
 .form {
@@ -2220,6 +2523,32 @@ button.danger {
   font-weight: 600;
 }
 
+/* Aviso de clave maestra faltante */
+.sin-clave {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.sin-clave-msg {
+  margin: 0;
+  color: var(--color-text-2);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.sin-clave-msg a {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.sin-clave-msg a:hover {
+  text-decoration: underline;
+}
+
 .sub-title {
   display: flex;
   align-items: center;
@@ -2258,6 +2587,45 @@ button.danger {
 
 .secreto-input-row input {
   flex: 1;
+}
+
+/* Switch cifrado / visible */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.switch:hover {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+.switch.on {
+  background: hsl(var(--primary) / 0.15);
+  border-color: hsl(var(--primary) / 0.5);
+  color: var(--color-primary-dark);
+}
+
+.switch-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+/* Dato en texto plano dentro de la caja fuerte */
+.secreto-texto.plano {
+  border: 1px dashed var(--color-border);
 }
 
 .secreto-body {

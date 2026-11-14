@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   IconKey,
   IconCheck,
@@ -20,7 +21,33 @@ import { THEMES, setTheme, theme } from '../utils/theme'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 
 /** Pestaña activa de la página de opciones */
-const activeTab = ref<'tema' | 'secretos'>('tema')
+type OpcionesTab = 'tema' | 'secretos'
+
+const route = useRoute()
+const router = useRouter()
+
+function tabFromQuery(value: unknown): OpcionesTab {
+  const v = Array.isArray(value) ? value[0] : value
+  return v === 'secretos' ? 'secretos' : 'tema'
+}
+
+const activeTab = ref<OpcionesTab>(tabFromQuery(route.query.tab))
+
+// Mantener la pestaña activa en la URL (permite enlazar a "Opciones > Secretos")
+watch(activeTab, (t) => {
+  if (route.query.tab !== t) {
+    router.replace({ query: { ...route.query, tab: t } })
+  }
+})
+
+// Si la URL cambia (ej. desde un enlace externo), sincronizar la pestaña
+watch(
+  () => route.query.tab,
+  (value) => {
+    const t = tabFromQuery(value)
+    if (t !== activeTab.value) activeTab.value = t
+  },
+)
 
 const clave1 = ref('')
 const clave2 = ref('')

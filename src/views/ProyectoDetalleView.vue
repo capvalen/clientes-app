@@ -46,7 +46,15 @@ import {
   type Pago,
   type Cliente,
 } from '../api/pocketbase'
-import { capitalize, formatDate, formatDateTime, formatFechaHora, pbDateTime, upperFirst } from '../utils/format'
+import {
+  capitalize,
+  formatDate,
+  formatDateTime,
+  formatDiaMax,
+  formatFechaHora,
+  pbDateTime,
+  upperFirst,
+} from '../utils/format'
 import { showMontos, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
@@ -811,7 +819,7 @@ onMounted(load)
             </dd>
           </div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(proyecto.fecha_inicio) }}</dd></div>
-          <div><dt>Fecha final</dt><dd>{{ formatDate(proyecto.fecha_final) }}</dd></div>
+          <div><dt>Día Max.</dt><dd>{{ formatDiaMax(proyecto.fecha_final, proyecto.fecha_inicio) }}</dd></div>
           <div class="long"><dt>Descripción</dt><dd>{{ proyecto.descripcion || '—' }}</dd></div>
           <div class="long"><dt>Observaciones</dt><dd>{{ proyecto.observaciones || '—' }}</dd></div>
         </dl>
@@ -849,7 +857,7 @@ onMounted(load)
               <input v-model="editForm.fecha_inicio" type="date" />
             </label>
             <label>
-              Fecha final
+              Día Max.
               <input v-model="editForm.fecha_final" type="date" />
             </label>
             <label class="full">
