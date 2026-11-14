@@ -21,6 +21,7 @@ import {
   IconEyeOff,
   IconFilter,
   IconHammer,
+  IconInfoCircle,
   IconLoader,
   IconNotes,
   IconPaperclip,
@@ -50,12 +51,11 @@ import {
   capitalize,
   formatDate,
   formatDateTime,
-  formatDiaMax,
   formatFechaHora,
   pbDateTime,
   upperFirst,
 } from '../utils/format'
-import { showMontos, toggleMontos } from '../utils/montos'
+import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
 import DropzoneFile from '../components/DropzoneFile.vue'
@@ -417,6 +417,23 @@ const saldoDeuda = computed(() => {
   return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
 })
 
+/**
+ * Aviso contextual del monto a pagar.
+ * Se permite 0 (cobro gratis); solo se avisa cuando el saldo no quedaría cubierto.
+ */
+const avisoMonto = computed(() => {
+  const raw = realizarPagoMonto.value.trim()
+  if (raw === '') return ''
+  const valor = Number(raw)
+  if (!Number.isFinite(valor)) return 'Monto inválido.'
+  const pendiente = saldoDeuda.value
+  if (valor > pendiente) return `El monto supera el saldo pendiente (${monto(pendiente)}).`
+  if (valor === 0 && pendiente > 0)
+    return `El saldo pendiente (${monto(pendiente)}) no se cubrirá con este registro.`
+  if (valor === 0) return 'Sin saldo pendiente: se marcará el cobro como pagado.'
+  return ''
+})
+
 function openRealizarPago(pago: Pago) {
   realizarPagoTarget.value = pago
   const saldo = Math.max(0, (Number(pago.monto) || 0) - (Number(pago.adelanto) || 0))
@@ -433,8 +450,17 @@ function closeRealizarPago() {
 async function guardarRealizarPago() {
   const pago = realizarPagoTarget.value
   if (!pago) return
-  const abono = Number(realizarPagoMonto.value) || 0
-  if (abono <= 0) return
+  // Se acepta 0 (cobro gratis): solo se rechazan campos vacíos o valores negativos
+  const raw = realizarPagoMonto.value.trim()
+  if (raw === '') {
+    error.value = 'Ingresa el monto a pagar (0 si es gratis).'
+    return
+  }
+  const abono = Number(raw)
+  if (!Number.isFinite(abono) || abono < 0) {
+    error.value = 'El monto a pagar debe ser mayor o igual a 0.'
+    return
+  }
   saving.value = true
   error.value = ''
   try {
@@ -819,7 +845,6 @@ onMounted(load)
             </dd>
           </div>
           <div><dt>Fecha inicio</dt><dd>{{ formatDate(proyecto.fecha_inicio) }}</dd></div>
-          <div><dt>Día Max.</dt><dd>{{ formatDiaMax(proyecto.fecha_final, proyecto.fecha_inicio) }}</dd></div>
           <div class="long"><dt>Descripción</dt><dd>{{ proyecto.descripcion || '—' }}</dd></div>
           <div class="long"><dt>Observaciones</dt><dd>{{ proyecto.observaciones || '—' }}</dd></div>
         </dl>
@@ -855,10 +880,6 @@ onMounted(load)
             <label>
               Fecha inicio
               <input v-model="editForm.fecha_inicio" type="date" />
-            </label>
-            <label>
-              Día Max.
-              <input v-model="editForm.fecha_final" type="date" />
             </label>
             <label class="full">
               Observaciones
@@ -1011,7 +1032,7 @@ onMounted(load)
                 {{ formatFechaHora(pago.fecha) }}
               </span>
               <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
-                <span class="pa-label">Adelanto:</span>
+                <span class="pa-label">Adelanto: </span>
                 <Monto :value="pago.adelanto" />
               </span>
             </div>

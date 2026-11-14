@@ -25,6 +25,7 @@ import {
   IconUser,
   IconUsers,
   IconVault,
+  IconWallet,
   IconX,
 } from '@tabler/icons-vue'
 import {
@@ -570,6 +571,12 @@ async function saveEdit() {
   }
 }
 
+/** Abre la vista de cobros filtrada por este cliente (/cobro/:id) */
+function verCobros() {
+  if (!cliente.value) return
+  router.push(`/cobro/${cliente.value.id}`)
+}
+
 async function eliminar() {
   if (!cliente.value) return
   if (!confirm(`¿Eliminar a "${cliente.value.nombre}"?`)) return
@@ -1025,6 +1032,13 @@ async function saveSecretoEdit() {
       <div class="head">
         <h1>{{ cliente.nombre }}</h1>
         <div class="head-actions">
+          <button
+            class="ghost"
+            title="Ver los cobros de este cliente"
+            @click="verCobros"
+          >
+            <IconWallet :size="18" /> Ver cobros
+          </button>
           <button
             class="ghost"
             :title="showMontos ? 'Ocultar montos' : 'Ver montos'"
@@ -1955,6 +1969,7 @@ async function saveSecretoEdit() {
 
 .head-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-left: auto;
 }

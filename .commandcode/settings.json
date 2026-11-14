@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(git:*)",
+      "Shell(grep:*)",
+      "Shell(for sel in \".ticket-desglose\" \".ticket-capture\" \"@media (max-width: 640px)\" \".estado-wrap\" \".estado-menu\" \".fields .full\" \".spin\"; do n=$(grep -c -- \"$sel\" src/views/ServicioDetalleView.vue); echo \"$n $sel\"; done)",
+      "Shell(npm:*)",
+      "Shell(for sel in \".secreto-titulo {\" \".secreto-header {\" \".datos-card {\" \".sin-clave {\" \".switch {\" \".secreto-texto.plano\"; do n=$(grep -c -- \"$sel\" src/views/ClienteDetalleView.vue); echo \"$n $sel\"; done; echo; echo \"=== estado-wrap/menu en Servicio (dup?) ===\"; grep -c \"^\\.estado-wrap {\\|^\\.estado-menu {\" src/views/ServicioDetalleView.vue)",
+      "Shell(git add src/views/ProyectoDetalleView.vue src/views/ServicioDetalleView.vue && GIT_EDITOR=true git rebase --continue 2>&1; echo \"---\"; git status)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

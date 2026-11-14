@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import html2canvas from 'html2canvas'
 import {
   IconAlertTriangle,
   IconBuilding,
   IconBuildingBank,
   IconCalendar,
+  IconCalendarStats,
   IconCamera,
   IconCash,
   IconCheck,
@@ -18,6 +19,7 @@ import {
   IconEye,
   IconEyeOff,
   IconFolder,
+  IconInfoCircle,
   IconLoader,
   IconNotes,
   IconPaperclip,
@@ -90,6 +92,10 @@ interface EntidadInfo {
   tipo: EntidadTipo
   cliente_id: string
   ruta: string
+  /** Fecha de fin del servicio ("Día máx."). Solo para servicios. */
+  fecha_final?: string | null
+  /** Fecha de inicio del servicio (para comparar con la fecha final) */
+  fecha_inicio?: string | null
 }
 
 const entidades = computed(() => {
@@ -108,6 +114,8 @@ const entidades = computed(() => {
       tipo: 'servicio',
       cliente_id: s.cliente_id,
       ruta: `/servicio/${s.id}`,
+      fecha_final: s.fecha_final,
+      fecha_inicio: s.fecha_inicio,
     })
   }
   return map
@@ -127,6 +135,17 @@ function clienteNombreEntidad(pago: Pago): string {
   const ent = entidadDe(pago)
   if (!ent) return '—'
   return clientesMap.value.get(ent.cliente_id)?.nombre ?? '—'
+}
+
+/**
+ * "Día máx." de un cobro: solo aplica a cobros de tipo servicio.
+ * Devuelve la fecha final del servicio formateada, o '' si no corresponde.
+ */
+function diaMaxCobro(pago: Pago): string {
+  const ent = entidadDe(pago)
+  if (!ent || ent.tipo !== 'servicio') return ''
+  if (!ent.fecha_final) return ''
+  return formatFechaCorta(ent.fecha_final)
 }
 
 // ---- Agrupación por mes ----
@@ -213,7 +232,37 @@ function textoBuscable(p: Pago): string {
 }
 
 // ---- Filtro por cliente ----
-const filtroCliente = ref('')
+const route = useRoute()
+const router = useRouter()
+
+/**
+ * Id de cliente indicado en la URL.
+ * Acepta /cobro/:clienteId y también /cobro?cliente=id.
+ */
+function clienteDeRuta(): string {
+  const param = route.params.clienteId
+  const query = route.query.cliente
+  const valor = Array.isArray(param) ? param[0] : param
+  const queryValor = Array.isArray(query) ? query[0] : query
+  return String(valor ?? queryValor ?? '')
+}
+
+const filtroCliente = ref(clienteDeRuta())
+
+/** Sincroniza el filtro si se navega a otro /cobro/:id sin desmontar la vista */
+watch(
+  () => [route.params.clienteId, route.query.cliente],
+  () => {
+    const id = clienteDeRuta()
+    if (id !== filtroCliente.value) filtroCliente.value = id
+  },
+)
+
+/** Refleja en la URL el cliente elegido en el selector (permite compartir/recargar) */
+watch(filtroCliente, (id) => {
+  if (clienteDeRuta() === id) return
+  router.replace(id ? `/cobro/${id}` : '/cobro')
+})
 
 /** Clientes ordenados alfabéticamente para el selector */
 const clientesOrdenados = computed(() =>
@@ -253,6 +302,23 @@ const saldo = computed(() => {
   return Math.max(0, (Number(p.monto) || 0) - (Number(p.adelanto) || 0))
 })
 
+/**
+ * Aviso contextual del monto a pagar.
+ * Se permite 0 (cobro gratis); solo se avisa cuando el saldo no quedaría cubierto.
+ */
+const avisoMonto = computed(() => {
+  const raw = abonoMonto.value.trim()
+  if (raw === '') return ''
+  const valor = Number(raw)
+  if (!Number.isFinite(valor)) return 'Monto inválido.'
+  const pendiente = saldo.value
+  if (valor > pendiente) return `El monto supera el saldo pendiente (${monto(pendiente)}).`
+  if (valor === 0 && pendiente > 0)
+    return `El saldo pendiente (${monto(pendiente)}) no se cubrirá con este registro.`
+  if (valor === 0) return 'Sin saldo pendiente: se marcará el cobro como pagado.'
+  return ''
+})
+
 function openRealizarPago(pago: Pago) {
   target.value = pago
   const s = Math.max(0, (Number(pago.monto) || 0) - (Number(pago.adelanto) || 0))
@@ -269,8 +335,17 @@ function closeRealizarPago() {
 async function registrarPago() {
   const pago = target.value
   if (!pago) return
-  const abono = Number(abonoMonto.value) || 0
-  if (abono <= 0) return
+  // Se acepta 0 (cobro gratis): solo se rechazan campos vacíos o valores negativos
+  const raw = abonoMonto.value.trim()
+  if (raw === '') {
+    error.value = 'Ingresa el monto a pagar (0 si es gratis).'
+    return
+  }
+  const abono = Number(raw)
+  if (!Number.isFinite(abono) || abono < 0) {
+    error.value = 'El monto a pagar debe ser mayor o igual a 0.'
+    return
+  }
   saving.value = true
   error.value = ''
   try {
@@ -508,6 +583,11 @@ onMounted(load)
                   <IconCalendar :size="13" />
                   {{ formatFechaCorta(p.fecha) }}
                 </span>
+                <span v-if="diaMaxCobro(p)" class="pago-dia-max">
+                  <span class="sep-dia-max" aria-hidden="true">·</span>
+                  <IconCalendarStats :size="13" />
+                  Día Max. {{ diaMaxCobro(p) }}
+                </span>
                 <span v-if="tieneAdelanto(p)" class="adelanto">{{ monto(p.adelanto) }}</span>
               </div>
             </div>
@@ -579,6 +659,11 @@ onMounted(load)
                   <IconCalendar :size="13" />
                   {{ formatFechaCorta(p.fecha) }}
                 </span>
+                <span v-if="diaMaxCobro(p)" class="pago-dia-max">
+                  <span class="sep-dia-max" aria-hidden="true">·</span>
+                  <IconCalendarStats :size="13" />
+                  Día Max. {{ diaMaxCobro(p) }}
+                </span>
                 <span v-if="tieneAdelanto(p)" class="adelanto">{{ monto(p.adelanto) }}</span>
               </div>
             </div>
@@ -649,6 +734,11 @@ onMounted(load)
                 <span class="pago-fecha">
                   <IconCalendar :size="13" />
                   {{ formatFechaCorta(p.fecha) }}
+                </span>
+                <span v-if="diaMaxCobro(p)" class="pago-dia-max">
+                  <span class="sep-dia-max" aria-hidden="true">·</span>
+                  <IconCalendarStats :size="13" />
+                  Día Max. {{ diaMaxCobro(p) }}
                 </span>
                 <span v-if="tieneAdelanto(p)" class="adelanto">{{ monto(p.adelanto) }}</span>
               </div>
@@ -726,6 +816,10 @@ onMounted(load)
             />
           </label>
         </div>
+
+        <p v-if="avisoMonto" class="hint" :class="{ warn: avisoMonto.includes('no se cubrirá') }">
+          <IconInfoCircle :size="14" /> {{ avisoMonto }}
+        </p>
 
         <p v-if="error" class="error">{{ error }}</p>
         <div class="row">
@@ -1140,6 +1234,20 @@ onMounted(load)
   font-style: italic;
 }
 
+/* Día máx. (solo cobros de tipo servicio) */
+.pago-dia-max {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-style: italic;
+  color: var(--color-text-2);
+}
+
+.sep-dia-max {
+  color: var(--color-text-2);
+  opacity: 0.6;
+}
+
 .adelanto {
   color: #0969da;
 }
@@ -1496,6 +1604,19 @@ button.ghost {
   color: var(--color-text-2);
 }
 
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-2);
+}
+
+.hint.warn {
+  color: #9a6700;
+}
+
 .error {
   color: #e5484d;
 }
@@ -1555,6 +1676,7 @@ button.ghost {
   .cobro-obs,
   .cobro-sub > .cliente,
   .cobro-sub > .pago-fecha,
+  .cobro-sub > .pago-dia-max,
   .cobro-sub > .adelanto,
   .cobro-right > .montos {
     display: flex;
@@ -1570,6 +1692,7 @@ button.ghost {
   .cobro-obs::before,
   .cliente::before,
   .pago-fecha::before,
+  .pago-dia-max::before,
   .montos::before,
   .adelanto::before {
     margin-right: auto;
@@ -1584,6 +1707,9 @@ button.ghost {
   }
   .pago-fecha::before {
     content: 'Fecha';
+  }
+  .pago-dia-max::before {
+    content: 'Día máx.';
   }
   .montos::before {
     content: 'Monto';
@@ -1601,8 +1727,11 @@ button.ghost {
   .pago-fecha {
     order: 4;
   }
-  .montos {
+  .pago-dia-max {
     order: 5;
+  }
+  .montos {
+    order: 6;
   }
 
   /* Monto: etiqueta a la izquierda, total a la derecha (sin tachado) */
@@ -1622,18 +1751,18 @@ button.ghost {
     display: none;
   }
   .adelanto {
-    order: 6;
+    order: 7;
   }
 
   /* 3) Badge de estado y botón largo */
   .cobro-right > .badge {
-    order: 7;
+    order: 8;
     align-self: flex-end;
     margin-top: 0.15rem;
   }
 
   .cobro-right > .realizar-pago {
-    order: 8;
+    order: 9;
     width: 100%;
   }
 
@@ -1643,7 +1772,7 @@ button.ghost {
   }
 
   .cobro-right > .detalle-btn {
-    order: 9;
+    order: 10;
     display: inline-flex;
     width: 100%;
   }

@@ -48,7 +48,8 @@ const router = createRouter({
       component: () => import('../views/ServicioDetalleView.vue'),
     },
     {
-      path: '/cobro',
+      // El id de cliente es opcional: /cobro y /cobro/:clienteId
+      path: '/cobro/:clienteId?',
       name: 'cobro',
       component: () => import('../views/CobroView.vue'),
     },
