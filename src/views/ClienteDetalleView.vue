@@ -1215,7 +1215,17 @@ async function saveSecretoEdit() {
           <ul v-if="secretos.length > 0" class="list secretos">
             <li v-for="s in secretos" :key="s.id">
               <div class="secreto-body">
-                <strong class="secreto-titulo"><IconVault :size="16" /> {{ s.titulo }}</strong>
+                <div class="secreto-header">
+                  <strong class="secreto-titulo"><IconVault :size="16" /> {{ s.titulo }}</strong>
+                  <div class="item-actions">
+                    <button class="edit-btn" title="Editar secreto" @click="openSecretoEdit(s)">
+                      <IconEdit :size="16" />
+                    </button>
+                    <button class="danger" title="Eliminar secreto" @click="eliminarSecreto(s)">
+                      <IconTrash :size="16" />
+                    </button>
+                  </div>
+                </div>
                 <div class="secreto-items">
                   <div v-for="(_, i) in secretoItems(s)" :key="i" class="secreto-item">
                     <span v-if="estaRevelado(s, i)" class="secreto-texto">
@@ -1248,14 +1258,6 @@ async function saveSecretoEdit() {
                     </button>
                   </div>
                 </div>
-              </div>
-              <div class="item-actions">
-                <button class="edit-btn" title="Editar secreto" @click="openSecretoEdit(s)">
-                  <IconEdit :size="16" />
-                </button>
-                <button class="danger" title="Eliminar secreto" @click="eliminarSecreto(s)">
-                  <IconTrash :size="16" />
-                </button>
               </div>
             </li>
           </ul>
@@ -2266,10 +2268,19 @@ button.danger {
   min-width: 0;
 }
 
+.secreto-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .secreto-titulo {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .secreto-items {

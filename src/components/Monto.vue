@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { showMontos } from '../utils/montos'
+import { computed } from 'vue'
+import { showMontos, montoVisible } from '../utils/montos'
 import MontoDots from './MontoDots.vue'
 
-defineProps<{ value?: number | string | null }>()
+const props = defineProps<{ value?: number | string | null }>()
+
+/** Texto a mostrar cuando los montos están visibles (0 → "Gratis") */
+const texto = computed(() => montoVisible(props.value))
 </script>
 
 <template>
   <Transition name="monto" mode="out-in">
-    <span v-if="showMontos" key="valor" class="monto-val">
-      S/ {{ Number(value || 0).toFixed(2) }}
-    </span>
+    <span v-if="showMontos" key="valor" class="monto-val">{{ texto }}</span>
     <MontoDots v-else key="dots" />
   </Transition>
 </template>

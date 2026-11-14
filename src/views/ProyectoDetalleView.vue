@@ -289,11 +289,13 @@ function openDeudaForm() {
 }
 
 async function guardarDeuda() {
-  if (!proyecto.value || !deudaForm.value.monto) return
+  const montoRaw = deudaForm.value.monto
+  // Permite guardar incluso con monto 0 (solo se exige que no esté vacío)
+  if (!proyecto.value || montoRaw === '' || montoRaw === null || montoRaw === undefined) return
   saving.value = true
   error.value = ''
   try {
-    const monto = Number(deudaForm.value.monto) || 0
+    const monto = Number(montoRaw) || 0
 
     // 1. Sumar la deuda al total del proyecto
     const updated = await updateProyecto(proyecto.value.id, {
