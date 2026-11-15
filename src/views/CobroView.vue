@@ -307,7 +307,7 @@ const saldo = computed(() => {
  * Se permite 0 (cobro gratis); solo se avisa cuando el saldo no quedaría cubierto.
  */
 const avisoMonto = computed(() => {
-  const raw = abonoMonto.value.trim()
+  const raw = String(abonoMonto.value).trim()
   if (raw === '') return ''
   const valor = Number(raw)
   if (!Number.isFinite(valor)) return 'Monto inválido.'
@@ -336,7 +336,7 @@ async function registrarPago() {
   const pago = target.value
   if (!pago) return
   // Se acepta 0 (cobro gratis): solo se rechazan campos vacíos o valores negativos
-  const raw = abonoMonto.value.trim()
+  const raw = String(abonoMonto.value).trim()
   if (raw === '') {
     error.value = 'Ingresa el monto a pagar (0 si es gratis).'
     return

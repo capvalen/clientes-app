@@ -18,11 +18,10 @@ export const MONTO_OCULTO = 'S/ •••'
 
 /**
  * Formatea un monto en soles sin respetar el estado global de visibilidad
- * (siempre visible). Cuando el monto es 0 se muestra "Gratis".
+ * (siempre visible).
  */
 export function montoVisible(value: number | string | null | undefined): string {
   const n = Number(value || 0)
-  if (n === 0) return 'Gratis'
   return `S/ ${n.toFixed(2)}`
 }
 
