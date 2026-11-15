@@ -44,7 +44,7 @@ import {
   type EntidadTipo,
 } from '../api/pocketbase'
 import { formatDateTime, formatFechaCorta } from '../utils/format'
-import { showMontos, monto, toggleMontos } from '../utils/montos'
+import { showMontos, monto, montoExacto, toggleMontos } from '../utils/montos'
 import Modal from '../components/Modal.vue'
 import MetodoPagoPicker from '../components/MetodoPagoPicker.vue'
 
@@ -555,7 +555,7 @@ onMounted(load)
             <IconAlertTriangle :size="20" /> Cobros vencidos
           </h2>
           <span class="total-pend alerta-total">
-            Por cobrar: {{ monto(totalPendiente(cobrosVencidos)) }}
+            Por cobrar: {{ montoExacto(totalPendiente(cobrosVencidos)) }}
           </span>
         </div>
 
@@ -630,7 +630,7 @@ onMounted(load)
       <section v-if="!hayFiltro || cobrosEsteMes.length > 0" class="card">
         <div class="tab-head">
           <h2>Cobros de este mes</h2>
-          <span class="total-pend">Por cobrar: {{ monto(totalPendiente(cobrosEsteMes)) }}</span>
+          <span class="total-pend">Por cobrar: {{ montoExacto(totalPendiente(cobrosEsteMes)) }}</span>
         </div>
 
         <p v-if="cobrosEsteMes.length === 0" class="muted">No hay cobros este mes.</p>
@@ -706,7 +706,7 @@ onMounted(load)
       <section v-if="!hayFiltro || cobrosProximoMes.length > 0" class="card">
         <div class="tab-head">
           <h2>Del próximo mes</h2>
-          <span class="total-pend">Por cobrar: {{ monto(totalPendiente(cobrosProximoMes)) }}</span>
+          <span class="total-pend">Por cobrar: {{ montoExacto(totalPendiente(cobrosProximoMes)) }}</span>
         </div>
 
         <p v-if="cobrosProximoMes.length === 0" class="muted">No hay cobros el próximo mes.</p>

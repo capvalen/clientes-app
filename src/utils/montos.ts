@@ -32,6 +32,15 @@ export function monto(value: number | string | null | undefined): string {
   return montoVisible(value)
 }
 
+/**
+ * Formatea un monto en soles respetando el estado global de visibilidad, pero
+ * siempre numérico: un 0 se muestra como "S/ 0.00" en lugar de "Gratis".
+ */
+export function montoExacto(value: number | string | null | undefined): string {
+  if (!showMontos.value) return MONTO_OCULTO
+  return `S/ ${Number(value || 0).toFixed(2)}`
+}
+
 /** Alterna la visibilidad de los montos en todo el sitio */
 export function toggleMontos() {
   showMontos.value = !showMontos.value

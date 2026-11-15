@@ -286,6 +286,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json()
 }
 
+/** Guarda el token y el correo del usuario autenticado */
+function storeAuth(data: { token: string; record?: Record<string, unknown> }, identity = '') {
+  setToken(data.token)
+
+  // Guarda el correo del usuario en localStorage.user para el control de acceso del módulo DNIs
+  const record = data?.record
+  if (record) {
+    setStoredUser({
+      user: String(record.email ?? record.user ?? identity ?? '').trim(),
+    })
+  }
+}
+
 /** Autenticación contra PocketBase (endpoint estándar auth-with-password) */
 export async function login(identity: string, password: string) {
   const res = await fetch(`${BASE_URL}/api/collections/users/auth-with-password`, {
@@ -298,17 +311,168 @@ export async function login(identity: string, password: string) {
     throw new Error(body?.message || 'Credenciales inválidas')
   }
   const data = await res.json()
-  setToken(data.token)
-
-  // Guarda el correo del usuario en localStorage.user para el control de acceso del módulo DNIs
-  const record = data?.record as Record<string, unknown> | undefined
-  if (record) {
-    setStoredUser({
-      user: String(record.email ?? record.user ?? identity ?? '').trim(),
-    })
-  }
-
+  storeAuth(data, identity)
   return data
+}
+
+// ---------- Login con Google (OAuth2 vía PocketBase) ----------
+
+/** PocketBase entrega el `code` de OAuth2 en esta URL (registrada en Google) */
+const OAUTH_REDIRECT_URL = `${BASE_URL}/api/oauth2-redirect`
+const OAUTH_POPUP_NAME = 'pb_google_login'
+const OAUTH_POPUP_FEATURES = 'width=520,height=640,menubar=no,toolbar=no,resizable=yes,scrollbars=yes'
+
+interface OAuthProvider {
+  name: string
+  authURL: string
+  codeVerifier: string
+}
+
+/** Abre (de forma sincrónica, para no ser bloqueada) la ventana del login de Google */
+export function openGooglePopup(): Window | null {
+  return window.open('about:blank', OAUTH_POPUP_NAME, OAUTH_POPUP_FEATURES)
+}
+
+/** Obtiene el proveedor de Google configurado en PocketBase */
+async function getGoogleProvider(): Promise<OAuthProvider> {
+  const res = await fetch(`${BASE_URL}/api/collections/users/auth-methods`)
+  if (!res.ok) throw new Error('No se pudo iniciar sesión con Google')
+
+  const data = await res.json().catch(() => null)
+  const providers: OAuthProvider[] = data?.oauth2?.providers ?? data?.authProviders ?? []
+  const provider = providers.find((p) => p.name === 'google')
+  if (!provider) throw new Error('El inicio de sesión con Google no está habilitado')
+  return provider
+}
+
+/** Se suscribe al canal realtime donde PocketBase publica el resultado del OAuth2 */
+async function subscribeOAuth2(clientId: string) {
+  const res = await fetch(`${BASE_URL}/api/realtime`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, subscriptions: ['@oauth2'] }),
+  })
+  if (!res.ok) throw new Error('No se pudo iniciar sesión con Google')
+}
+
+/**
+ * Inicia sesión con Google en una ventana emergente.
+ * El `code` de Google llega por realtime (canal `@oauth2`) usando el clientId
+ * como `state`, tal como lo hace el SDK oficial de PocketBase.
+ */
+export async function loginWithGoogle(popup: Window | null): Promise<void> {
+  const provider = await getGoogleProvider()
+  const source = new EventSource(`${BASE_URL}/api/realtime`)
+  let win = popup
+
+  try {
+    const clientId = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('No se pudo conectar con el servidor. Intenta de nuevo.')),
+        15000,
+      )
+      source.addEventListener(
+        'PB_CONNECT',
+        (event) => {
+          clearTimeout(timer)
+          const id = (event as MessageEvent).lastEventId
+          if (id) resolve(id)
+          else reject(new Error('No se pudo iniciar sesión con Google'))
+        },
+        { once: true },
+      )
+      source.addEventListener(
+        'error',
+        () => {
+          clearTimeout(timer)
+          reject(new Error('No se pudo conectar con el servidor. Intenta de nuevo.'))
+        },
+        { once: true },
+      )
+    })
+
+    await subscribeOAuth2(clientId)
+
+    // El state del authURL se reemplaza por el clientId para recibir el code
+    const authUrl = new URL(provider.authURL)
+    authUrl.searchParams.set('state', clientId)
+    authUrl.searchParams.set('redirect_uri', OAUTH_REDIRECT_URL)
+
+    const codePromise = new Promise<string>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout>
+      let popupWatcher: ReturnType<typeof setInterval> | undefined
+      const finish = () => {
+        clearTimeout(timer)
+        if (popupWatcher) clearInterval(popupWatcher)
+      }
+
+      timer = setTimeout(() => {
+        finish()
+        reject(new Error('El inicio de sesión con Google tardó demasiado. Intenta de nuevo.'))
+      }, 5 * 60 * 1000)
+
+      source.addEventListener('@oauth2', (event) => {
+        finish()
+        let payload: { code?: string; state?: string; error?: string } = {}
+        try {
+          payload = JSON.parse((event as MessageEvent).data)
+        } catch {
+          reject(new Error('No se pudo iniciar sesión con Google'))
+          return
+        }
+        if (payload.state !== clientId) {
+          reject(new Error('No se pudo validar la sesión de Google.'))
+        } else if (payload.error || !payload.code) {
+          reject(new Error('No se pudo completar el inicio de sesión con Google.'))
+        } else {
+          resolve(payload.code)
+        }
+      })
+
+      // Si el usuario cierra la ventana, no seguimos esperando
+      if (win) {
+        popupWatcher = setInterval(() => {
+          if (win?.closed) {
+            finish()
+            reject(new Error('Inicio de sesión con Google cancelado.'))
+          }
+        }, 500)
+      }
+    })
+
+    if (!win) win = window.open(authUrl.toString(), OAUTH_POPUP_NAME, OAUTH_POPUP_FEATURES)
+    if (!win) throw new Error('Permite las ventanas emergentes para iniciar sesión con Google')
+    win.location.href = authUrl.toString()
+
+    const code = await codePromise
+
+    const res = await fetch(`${BASE_URL}/api/collections/users/auth-with-oauth2`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: provider.name,
+        code,
+        codeVerifier: provider.codeVerifier,
+        redirectURL: OAUTH_REDIRECT_URL,
+      }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      const message = String(body?.message ?? '')
+      // La colección tiene la creación de cuentas restringida: el correo no está autorizado
+      if (/failed to create record/i.test(message)) {
+        throw new Error(
+          'Tu cuenta de Google no está autorizada. Contacta al administrador para que cree tu usuario.',
+        )
+      }
+      throw new Error(message || 'No se pudo iniciar sesión con Google')
+    }
+
+    storeAuth(await res.json())
+  } finally {
+    source.close()
+    win?.close()
+  }
 }
 
 export async function listClientes(): Promise<Cliente[]> {

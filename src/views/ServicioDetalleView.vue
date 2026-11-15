@@ -1048,7 +1048,7 @@ onMounted(load)
                 <IconCalendar :size="13" />
                 {{ formatFechaCorta(pago.fecha) }}
               </span>
-              <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
+              <span v-if="tieneAdelanto(pago)" class="pago-adelanto">
                 Adelanto: {{ monto(pago.adelanto) }}
               </span>
             </div>

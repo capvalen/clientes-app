@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconLogin, IconLoader } from '@tabler/icons-vue'
-import { login } from '../api/pocketbase'
+import { IconBrandGoogle, IconLogin, IconLoader } from '@tabler/icons-vue'
+import { login, loginWithGoogle, openGooglePopup } from '../api/pocketbase'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,18 +11,38 @@ const identity = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+const googleLoading = ref(false)
+
+function redirectTarget() {
+  return typeof route.query.redirect === 'string' ? route.query.redirect : '/cliente'
+}
 
 async function submit() {
   error.value = ''
   loading.value = true
   try {
     await login(identity.value, password.value)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/cliente'
-    router.push(redirect)
+    router.push(redirectTarget())
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Error al iniciar sesión'
   } finally {
     loading.value = false
+  }
+}
+
+async function loginConGoogle() {
+  error.value = ''
+  googleLoading.value = true
+  // Se abre la ventana de inmediato (antes de cualquier await) para evitar el bloqueo de popups
+  const popup = openGooglePopup()
+  try {
+    await loginWithGoogle(popup)
+    router.push(redirectTarget())
+  } catch (e) {
+    popup?.close()
+    error.value = e instanceof Error ? e.message : 'Error al iniciar sesión con Google'
+  } finally {
+    googleLoading.value = false
   }
 }
 </script>
@@ -38,6 +58,14 @@ async function submit() {
         <h1>Deal Desk</h1>
         <p class="subtitle">Gestión de contratos y proyectos</p>
       </div>
+
+      <button type="button" class="google-btn" :disabled="loading || googleLoading" @click="loginConGoogle">
+        <IconLoader v-if="googleLoading" :size="18" class="spin" />
+        <IconBrandGoogle v-else :size="18" />
+        {{ googleLoading ? 'Conectando con Google…' : 'Continuar con Google' }}
+      </button>
+
+      <div class="divider"><span>o ingresa con tu correo</span></div>
 
       <div class="form-group">
         <label for="identity">Correo</label>
@@ -63,7 +91,7 @@ async function submit() {
 
       <p v-if="error" class="error">{{ error }}</p>
 
-      <button type="submit" :disabled="loading">
+      <button type="submit" :disabled="loading || googleLoading">
         <IconLoader v-if="loading" :size="18" class="spin" />
         <IconLogin v-else :size="18" />
         {{ loading ? 'Ingresando…' : 'Entrar' }}
@@ -276,6 +304,41 @@ button:disabled::before {
   100% {
     left: 125%;
   }
+}
+
+.google-btn {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1.5px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.google-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.google-btn::before {
+  display: none;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
 }
 
 @media (prefers-reduced-motion: reduce) {
