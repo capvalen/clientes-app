@@ -117,6 +117,46 @@ export function clearToken() {
   clearStoredUser()
 }
 
+/** Borra las cookies accesibles desde JS (en el path actual y en la raíz) */
+function clearCookies() {
+  if (!document.cookie) return
+  const host = window.location.hostname
+  const domains = ['', host, `.${host}`]
+  for (const raw of document.cookie.split(';')) {
+    const name = raw.split('=')[0]?.trim()
+    if (!name) continue
+    for (const domain of domains) {
+      for (const path of ['/', window.location.pathname]) {
+        const domainAttr = domain ? `; domain=${domain}` : ''
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=${path}${domainAttr}`
+      }
+    }
+  }
+}
+
+/**
+ * Cierre de sesión completo: token de PocketBase, usuario guardado, claves de
+ * sesión heredadas (SDK) y cookies. La redirección la hace quien lo invoca.
+ */
+export function logout() {
+  clearToken()
+
+  try {
+    // Restos que pudo dejar el SDK oficial o versiones anteriores
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('pb_') || key.toLowerCase().startsWith('pocketbase')) {
+        localStorage.removeItem(key)
+      }
+    }
+    // La clave maestra de cifrado y cualquier otro dato efímero viven aquí
+    sessionStorage.clear()
+  } catch {
+    /* storage no disponible */
+  }
+
+  clearCookies()
+}
+
 export function isAuthenticated(): boolean {
   const token = getToken()
   if (!token) return false

@@ -13,7 +13,7 @@ import {
   IconX,
   IconId,
 } from '@tabler/icons-vue'
-import { isAuthenticated, clearToken, ensureSession } from './api/pocketbase'
+import { isAuthenticated, logout as cerrarSesion, ensureSession } from './api/pocketbase'
 import { isDniAdmin } from './utils/session'
 import Toasts from './components/Toasts.vue'
 
@@ -74,10 +74,14 @@ onUnmounted(() => {
 })
 
 function logout() {
-  clearToken()
+  // Borra token, usuario, sessionStorage (clave maestra) y cookies
+  cerrarSesion()
   authed.value = false
+  dniAdmin.value = false
   menuOpen.value = false
-  router.push('/login')
+  // Recarga completa hacia el login: así no queda nada en memoria ni componentes montados
+  const base = import.meta.env.BASE_URL || '/'
+  window.location.replace(`${base.endsWith('/') ? base : `${base}/`}login`)
 }
 </script>
 

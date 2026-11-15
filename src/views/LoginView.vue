@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconBrandGoogle, IconLogin, IconLoader } from '@tabler/icons-vue'
+import { IconLogin, IconLoader } from '@tabler/icons-vue'
 import { login, loginWithGoogle, openGooglePopup } from '../api/pocketbase'
 
 const route = useRoute()
@@ -61,7 +61,7 @@ async function loginConGoogle() {
 
       <button type="button" class="google-btn" :disabled="loading || googleLoading" @click="loginConGoogle">
         <IconLoader v-if="googleLoading" :size="18" class="spin" />
-        <IconBrandGoogle v-else :size="18" />
+        <img v-else src="/google-logo.svg" alt="Google" class="google-logo" />
         {{ googleLoading ? 'Conectando con Google…' : 'Continuar con Google' }}
       </button>
 
@@ -321,6 +321,12 @@ button:disabled::before {
 
 .google-btn::before {
   display: none;
+}
+
+.google-logo {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 .divider {
