@@ -54,6 +54,11 @@ const router = createRouter({
       component: () => import('../views/CobroView.vue'),
     },
     {
+      path: '/cotizador',
+      name: 'cotizador',
+      component: () => import('../views/CotizadorView.vue'),
+    },
+    {
       path: '/opciones',
       name: 'opciones',
       component: () => import('../views/OpcionesView.vue'),

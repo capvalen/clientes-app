@@ -19,6 +19,8 @@ export interface Nota {
 
 export interface Cliente {
   id: string
+  /** Usuario dueño del cliente (relación con users) */
+  user_id?: string
   nombre: string
   celular: string
   ruc: string
@@ -34,6 +36,8 @@ export type EstadoProyecto = 'activo' | 'completado' | 'cancelado'
 
 export interface Proyecto {
   id: string
+  /** Usuario dueño del proyecto (relación con users) */
+  user_id?: string
   cliente_id: string
   proyecto: string
   descripcion: string
@@ -54,6 +58,8 @@ export type EstadoServicio = 'activo' | 'inactivo' | 'suspendido'
 
 export interface Servicio {
   id: string
+  /** Usuario dueño del servicio (relación con users) */
+  user_id?: string
   cliente_id: string
   servicio: string
   descripcion: string
@@ -86,6 +92,8 @@ export const METODOS_PAGO = [
 
 export interface Pago {
   id: string
+  /** Usuario dueño del pago (relación con users) */
+  user_id?: string
   monto: number
   /** Monto ya abonado de una deuda (0 mientras no se abone nada) */
   adelanto: number
@@ -105,6 +113,14 @@ export interface Pago {
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
+}
+
+/** Id del usuario autenticado (claim `id` del token de PocketBase) */
+export function getUserId(): string | null {
+  const token = getToken()
+  if (!token) return null
+  const payload = decodeJwtPayload(token)
+  return payload?.id ? String(payload.id) : null
 }
 
 export function setToken(token: string) {
@@ -168,7 +184,7 @@ export function isAuthenticated(): boolean {
  * Decodifica el payload de un JWT (sin verificar la firma).
  * PocketBase devuelve un JWT cuyo claim `exp` indica la expiración en segundos.
  */
-function decodeJwtPayload(token: string): { exp?: number } | null {
+function decodeJwtPayload(token: string): { exp?: number; id?: string } | null {
   try {
     const payload = token.split('.')[1]
     if (!payload) return null
@@ -515,9 +531,11 @@ export async function loginWithGoogle(popup: Window | null): Promise<void> {
   }
 }
 
-export async function listClientes(): Promise<Cliente[]> {
+/** Lista clientes; si se indica userId, solo los de ese usuario */
+export async function listClientes(userId?: string): Promise<Cliente[]> {
+  const filter = userId ? `&filter=${encodeURIComponent(`user_id="${userId}"`)}` : ''
   const data = await request<{ items: Cliente[] }>(
-    '/api/collections/is_clientes/records?perPage=200&sort=-created',
+    `/api/collections/is_clientes/records?perPage=200&sort=-created${filter}`,
   )
   return data.items
 }
@@ -553,9 +571,11 @@ function normalizeCliente(data: Partial<Cliente>): Partial<Cliente> {
 }
 
 export async function createCliente(data: Partial<Cliente>): Promise<Cliente> {
+  // El cliente se asigna al usuario autenticado si no viene indicado
+  const user_id = data.user_id ?? getUserId() ?? undefined
   return request<Cliente>('/api/collections/is_clientes/records', {
     method: 'POST',
-    body: JSON.stringify(normalizeCliente(data)),
+    body: JSON.stringify(normalizeCliente({ ...data, user_id })),
   })
 }
 
@@ -634,9 +654,11 @@ export async function deleteNota(id: string): Promise<void> {
 
 // ---------- Proyectos ----------
 
-export async function listProyectos(): Promise<Proyecto[]> {
+/** Lista proyectos; si se indica userId, solo los de ese usuario */
+export async function listProyectos(userId?: string): Promise<Proyecto[]> {
+  const filter = userId ? `&filter=${encodeURIComponent(`user_id="${userId}"`)}` : ''
   const data = await request<{ items: Proyecto[] }>(
-    '/api/collections/is_proyectos/records?perPage=200&sort=-created',
+    `/api/collections/is_proyectos/records?perPage=200&sort=-created${filter}`,
   )
   return data.items
 }
@@ -661,9 +683,11 @@ function normalizeProyecto(data: Partial<Proyecto>): Partial<Proyecto> {
 }
 
 export async function createProyecto(data: Partial<Proyecto>): Promise<Proyecto> {
+  // El proyecto se asigna al usuario autenticado si no viene indicado
+  const user_id = data.user_id ?? getUserId() ?? undefined
   return request<Proyecto>('/api/collections/is_proyectos/records', {
     method: 'POST',
-    body: JSON.stringify(normalizeProyecto(data)),
+    body: JSON.stringify(normalizeProyecto({ ...data, user_id })),
   })
 }
 
@@ -692,12 +716,17 @@ export async function listPagosPorEntidad(
   return data.items
 }
 
-/** Lista TODOS los pagos (de proyectos y servicios) */
-export async function listPagos(): Promise<Pago[]> {
+/**
+ * Lista los pagos (de proyectos y servicios).
+ * Si se indica userId, solo los de ese usuario. El filtro se hace en el cliente
+ * porque PocketBase rechaza `user_id` dentro de `filter` en is_pagos.
+ */
+export async function listPagos(userId?: string): Promise<Pago[]> {
   const data = await request<{ items: Pago[] }>(
     '/api/collections/is_pagos/records?perPage=500&sort=fecha',
   )
-  return data.items
+  if (!userId) return data.items
+  return data.items.filter((p) => String(p.user_id ?? '') === userId)
 }
 
 /** Normaliza el parámetro de comprobantes a un array de File */
@@ -711,8 +740,10 @@ export async function createPago(
   data: Partial<Pago>,
   comprobantes?: File[] | File | null,
 ): Promise<Pago> {
+  // El pago se asigna al usuario autenticado si no viene indicado
+  const user_id = data.user_id ?? getUserId() ?? undefined
   const form = new FormData()
-  Object.entries(data).forEach(([key, value]) => {
+  Object.entries({ ...data, user_id }).forEach(([key, value]) => {
     if (key === 'comprobante') return // los archivos se adjuntan aparte
     if (value != null && value !== '') form.append(key, String(value))
   })
@@ -794,9 +825,11 @@ export async function deletePago(id: string): Promise<void> {
 
 // ---------- Servicios ----------
 
-export async function listServicios(): Promise<Servicio[]> {
+/** Lista servicios; si se indica userId, solo los de ese usuario */
+export async function listServicios(userId?: string): Promise<Servicio[]> {
+  const filter = userId ? `&filter=${encodeURIComponent(`user_id="${userId}"`)}` : ''
   const data = await request<{ items: Servicio[] }>(
-    '/api/collections/is_servicios/records?perPage=200&sort=-created',
+    `/api/collections/is_servicios/records?perPage=200&sort=-created${filter}`,
   )
   return data.items
 }
@@ -820,9 +853,11 @@ function normalizeServicio(data: Partial<Servicio>): Partial<Servicio> {
 }
 
 export async function createServicio(data: Partial<Servicio>): Promise<Servicio> {
+  // El servicio se asigna al usuario autenticado si no viene indicado
+  const user_id = data.user_id ?? getUserId() ?? undefined
   return request<Servicio>('/api/collections/is_servicios/records', {
     method: 'POST',
-    body: JSON.stringify(normalizeServicio(data)),
+    body: JSON.stringify(normalizeServicio({ ...data, user_id })),
   })
 }
 
@@ -835,6 +870,133 @@ export async function updateServicio(id: string, data: Partial<Servicio>): Promi
 
 export async function deleteServicio(id: string): Promise<void> {
   await request(`/api/collections/is_servicios/records/${id}`, { method: 'DELETE' })
+}
+
+// ---------- Configuraciones (is_configuraciones) ----------
+
+/** Valor de una configuración por usuario */
+export interface ConfiguracionRegistro {
+  id: string
+  clave: string
+  /** Valor serializado con JSON.stringify */
+  valor: string
+  user_id: string
+  created: string
+  updated: string
+}
+
+/** Peso de una actividad del cotizador con su equivalencia en horas */
+export interface PesoCotizador {
+  peso: number
+  descripcion: string
+  horas: number
+}
+
+/** Configuración completa de `pesos_cotizador` */
+export interface ConfigPesosCotizador {
+  /** Precio por hora aplicado a todas las actividades */
+  precio_hora: number
+  pesos: PesoCotizador[]
+}
+
+/** Precio por hora inicial */
+export const PRECIO_HORA_DEFAULT = 15
+
+/** Pesos iniciales del cotizador */
+export const PESOS_COTIZADOR_DEFAULT: PesoCotizador[] = [
+  { peso: 1, descripcion: 'Muy sencillo', horas: 0.25 },
+  { peso: 2, descripcion: 'Sencillo', horas: 0.75 },
+  { peso: 3, descripcion: 'Medio', horas: 2 },
+  { peso: 5, descripcion: 'Difícil', horas: 4 },
+  { peso: 8, descripcion: 'Muy difícil', horas: 8 },
+  {
+    peso: 13,
+    descripcion: 'Fuera de alcance normal (requiere análisis adicional)',
+    horas: -1,
+  },
+]
+
+/** Valores iniciales de `pesos_cotizador` (se guardan al cargar si no existe el registro) */
+export const CONFIG_PESOS_COTIZADOR_DEFAULT: ConfigPesosCotizador = {
+  precio_hora: PRECIO_HORA_DEFAULT,
+  pesos: PESOS_COTIZADOR_DEFAULT,
+}
+
+/**
+ * Busca la configuración de un usuario por clave (null si no existe).
+ * Se filtra por `clave` en el servidor y se compara `user_id` en el cliente:
+ * PocketBase responde 400 al usar `user_id` dentro de `filter` (campo no filtrable).
+ */
+export async function getConfiguracion(
+  clave: string,
+  userId: string,
+): Promise<ConfiguracionRegistro | null> {
+  const data = await request<{ items: ConfiguracionRegistro[] }>(
+    `/api/collections/is_configuraciones/records?perPage=200&sort=-updated&filter=${encodeURIComponent(
+      `clave="${clave}"`,
+    )}`,
+  )
+  return data.items.find((r) => String(r.user_id ?? '') === userId) ?? null
+}
+
+/** Crea una configuración; el valor se guarda siempre como string JSON */
+export async function createConfiguracion(
+  clave: string,
+  userId: string,
+  valor: unknown,
+): Promise<ConfiguracionRegistro> {
+  return request<ConfiguracionRegistro>('/api/collections/is_configuraciones/records', {
+    method: 'POST',
+    body: JSON.stringify({ clave, user_id: userId, valor: JSON.stringify(valor) }),
+  })
+}
+
+/** Actualiza una configuración; el valor se guarda siempre como string JSON */
+export async function updateConfiguracion(
+  id: string,
+  valor: unknown,
+): Promise<ConfiguracionRegistro> {
+  return request<ConfiguracionRegistro>(`/api/collections/is_configuraciones/records/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ valor: JSON.stringify(valor) }),
+  })
+}
+
+/**
+ * Interpreta el valor de `pesos_cotizador` (string JSON) con respaldo en los valores por defecto.
+ * Acepta el formato nuevo `{ precio_hora, pesos: [...] }` y el anterior (solo el array de pesos).
+ */
+export function parsePesosCotizador(value: unknown): ConfigPesosCotizador {
+  const parsed = parseJson<unknown>(value, CONFIG_PESOS_COTIZADOR_DEFAULT)
+
+  // Formato anterior: un array de pesos sin precio_hora
+  if (Array.isArray(parsed)) {
+    return { precio_hora: PRECIO_HORA_DEFAULT, pesos: normalizePesosCotizador(parsed) }
+  }
+  if (!parsed || typeof parsed !== 'object') return CONFIG_PESOS_COTIZADOR_DEFAULT
+
+  const config = parsed as { precio_hora?: unknown; pesos?: unknown }
+  const precio = Number(config.precio_hora)
+  return {
+    precio_hora:
+      config.precio_hora == null || !Number.isFinite(precio) || precio < 0
+        ? PRECIO_HORA_DEFAULT
+        : precio,
+    pesos: normalizePesosCotizador(config.pesos),
+  }
+}
+
+/** Normaliza la lista de pesos leída de la configuración */
+function normalizePesosCotizador(value: unknown): PesoCotizador[] {
+  if (!Array.isArray(value)) return PESOS_COTIZADOR_DEFAULT
+  const pesos = value
+    .filter((p): p is PesoCotizador => !!p && typeof p === 'object')
+    .map((p) => ({
+      peso: Number((p as PesoCotizador).peso) || 0,
+      descripcion: String((p as PesoCotizador).descripcion ?? ''),
+      horas: Number((p as PesoCotizador).horas) || 0,
+    }))
+  return pesos.length > 0 ? pesos : PESOS_COTIZADOR_DEFAULT
 }
 
 /**

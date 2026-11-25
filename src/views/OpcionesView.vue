@@ -8,6 +8,8 @@ import {
   IconLock,
   IconShieldLock,
   IconPalette,
+  IconCalculator,
+  IconLoader,
 } from '@tabler/icons-vue'
 import {
   clearMasterPassword,
@@ -19,16 +21,27 @@ import {
 import { showToast } from '../utils/toast'
 import { THEMES, setTheme, theme } from '../utils/theme'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
+import {
+  PRECIO_HORA_DEFAULT,
+  updateConfiguracion,
+  type PesoCotizador,
+} from '../api/pocketbase'
+import {
+  cargarPesosCotizador,
+  savePesosCotizadorLocal,
+} from '../utils/pesosCotizador'
 
 /** Pestaña activa de la página de opciones */
-type OpcionesTab = 'tema' | 'secretos'
+type OpcionesTab = 'tema' | 'secretos' | 'pesos'
 
 const route = useRoute()
 const router = useRouter()
 
 function tabFromQuery(value: unknown): OpcionesTab {
   const v = Array.isArray(value) ? value[0] : value
-  return v === 'secretos' ? 'secretos' : 'tema'
+  if (v === 'secretos') return 'secretos'
+  if (v === 'pesos') return 'pesos'
+  return 'tema'
 }
 
 const activeTab = ref<OpcionesTab>(tabFromQuery(route.query.tab))
@@ -93,6 +106,69 @@ function bloquear() {
   ok.value = false
   showToast('Clave bloqueada', 'info')
 }
+
+// ---- Pesos del cotizador (is_configuraciones) ----
+
+const pesos = ref<PesoCotizador[]>([])
+/** Precio por hora global para todas las actividades */
+const precioHora = ref<number>(PRECIO_HORA_DEFAULT)
+const pesoConfigId = ref<string | null>(null)
+const cargandoPesos = ref(false)
+const guardandoPesos = ref(false)
+const pesosError = ref('')
+const pesosOk = ref(false)
+let pesosCargados = false
+
+/** Carga la configuración del usuario; si no existe, la crea con los valores por defecto */
+async function cargarPesos() {
+  if (cargandoPesos.value || pesosCargados) return
+  cargandoPesos.value = true
+  pesosError.value = ''
+  pesosOk.value = false
+  try {
+    // Consulta is_configuraciones; si no existe, inserta los valores por defecto
+    const { configId, config } = await cargarPesosCotizador()
+    pesoConfigId.value = configId
+    pesos.value = config.pesos
+    precioHora.value = config.precio_hora
+    pesosCargados = true
+  } catch (e) {
+    pesosError.value = e instanceof Error ? e.message : 'Error al cargar los pesos'
+  } finally {
+    cargandoPesos.value = false
+  }
+}
+
+async function guardarPesos() {
+  if (!pesoConfigId.value) return
+  guardandoPesos.value = true
+  pesosError.value = ''
+  pesosOk.value = false
+  try {
+    // Se guarda como string JSON en `valor` y se actualiza la copia local
+    const config = {
+      precio_hora: Number(precioHora.value) || 0,
+      pesos: pesos.value,
+    }
+    await updateConfiguracion(pesoConfigId.value, config)
+    savePesosCotizadorLocal(config)
+    pesosOk.value = true
+    showToast('Pesos guardados', 'success')
+  } catch (e) {
+    pesosError.value = e instanceof Error ? e.message : 'Error al guardar los pesos'
+  } finally {
+    guardandoPesos.value = false
+  }
+}
+
+// Cargar al entrar en la pestaña (o si la URL ya apunta a ella)
+watch(
+  activeTab,
+  (t) => {
+    if (t === 'pesos') cargarPesos()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -128,6 +204,18 @@ function bloquear() {
       >
         <IconKey :size="16" /> Secretos
       </button>
+      <button
+        id="tab-pesos"
+        class="tab"
+        :class="{ active: activeTab === 'pesos' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'pesos'"
+        aria-controls="panel-pesos"
+        @click="activeTab = 'pesos'"
+      >
+        <IconCalculator :size="16" /> Pesos del cotizador
+      </button>
     </div>
 
     <section
@@ -161,7 +249,7 @@ function bloquear() {
     </section>
 
     <section
-      v-else
+      v-else-if="activeTab === 'secretos'"
       id="panel-secretos"
       class="card"
       role="tabpanel"
@@ -209,6 +297,70 @@ function bloquear() {
           </button>
         </div>
       </form>
+    </section>
+
+    <section
+      v-else
+      id="panel-pesos"
+      class="card"
+      role="tabpanel"
+      aria-labelledby="tab-pesos"
+    >
+      <h2><IconCalculator :size="18" /> Pesos del cotizador</h2>
+      <p class="hint">
+        Valores usados para evaluar las actividades del cotizador. Se guardan por usuario en la
+        clave <code>pesos_cotizador</code> (valor en formato JSON). Si no existe el registro, se
+        crea automáticamente con los valores por defecto.
+      </p>
+
+      <p v-if="cargandoPesos" class="estado">
+        <IconLoader :size="16" class="spin" /> Cargando pesos…
+      </p>
+
+      <p v-if="pesosError" class="error">{{ pesosError }}</p>
+
+      <template v-if="!cargandoPesos && pesos.length > 0">
+        <!-- Enter en cualquier input guarda los pesos -->
+        <form @submit.prevent="guardarPesos">
+          <label class="precio-hora">
+            Precio por hora (S/)
+            <input v-model.number="precioHora" type="number" min="0" step="0.5" />
+          </label>
+
+          <table class="pesos">
+            <thead>
+              <tr>
+                <th>Peso</th>
+                <th>Descripción</th>
+                <th>Horas</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in pesos" :key="item.peso">
+                <td class="peso-valor">{{ item.peso }}</td>
+                <td>{{ item.descripcion }}</td>
+                <td class="peso-horas">
+                  <input v-model.number="item.horas" type="number" step="0.5" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p class="hint nota">
+            Usa <strong>-1</strong> en las horas para indicar que la actividad queda fuera de alcance
+            normal y requiere análisis adicional. El precio por hora se aplica al total de horas del
+            cotizador para calcular el costo estimado.
+          </p>
+
+          <div class="row">
+            <button type="submit" class="primary" :disabled="guardandoPesos">
+              <IconLoader v-if="guardandoPesos" :size="18" class="spin" />
+              <IconCheck v-else :size="18" />
+              {{ guardandoPesos ? 'Guardando…' : 'Guardar pesos' }}
+            </button>
+          </div>
+        </form>
+      </template>
     </section>
   </main>
 </template>
@@ -427,6 +579,78 @@ button.danger {
 
 button.danger:hover {
   background: rgba(229, 72, 77, 0.1);
+}
+
+.pesos {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.pesos th,
+.pesos td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.pesos th {
+  font-size: 0.8rem;
+  color: var(--color-text-2);
+  font-weight: 600;
+}
+
+.peso-valor {
+  font-weight: 700;
+  color: var(--color-primary-dark);
+}
+
+.peso-horas input {
+  width: 6rem;
+}
+
+.precio-hora {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 220px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.precio-hora input {
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.nota {
+  margin-top: 0.75rem;
+}
+
+.nota strong {
+  font-weight: 700;
+}
+
+code {
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+  background: var(--color-background-mute);
+  font-size: 0.85em;
+}
+
+.spin {
+  animation: girar 1s linear infinite;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .error {

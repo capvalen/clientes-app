@@ -7,6 +7,7 @@ import {
   listProyectos,
   listServicios,
   createCliente,
+  getUserId,
   parseSocios,
   type Cliente,
   type Proyecto,
@@ -103,7 +104,15 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [cli, proy, serv] = await Promise.all([listClientes(), listProyectos(), listServicios()])
+    const userId = getUserId()
+    if (!userId) throw new Error('No se pudo obtener el id del usuario. Vuelve a iniciar sesión.')
+
+    // Solo los clientes del usuario autenticado
+    const [cli, proy, serv] = await Promise.all([
+      listClientes(userId),
+      listProyectos(userId),
+      listServicios(userId),
+    ])
     clientes.value = cli
     proyectos.value = proy
     servicios.value = serv

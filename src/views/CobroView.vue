@@ -37,6 +37,7 @@ import {
   updatePago,
   getComprobanteFiles,
   getToken,
+  getUserId,
   type Pago,
   type Cliente,
   type Proyecto,
@@ -463,11 +464,14 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
+    const userId = getUserId()
+    if (!userId) throw new Error('No se pudo obtener el id del usuario. Vuelve a iniciar sesión.')
+
     const [pgs, cls, proys, servs] = await Promise.all([
-      listPagos(),
-      listClientes(),
-      listProyectos(),
-      listServicios(),
+      listPagos(userId),
+      listClientes(userId),
+      listProyectos(userId),
+      listServicios(userId),
     ])
     pagos.value = pgs
     clientes.value = cls

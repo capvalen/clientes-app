@@ -7,6 +7,7 @@ import {
   createProyecto,
   createPago,
   listClientes,
+  getUserId,
   type Cliente,
   type Proyecto,
 } from '../api/pocketbase'
@@ -97,7 +98,14 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [proy, cli] = await Promise.all([listProyectos(), listClientes()])
+    const userId = getUserId()
+    if (!userId) throw new Error('No se pudo obtener el id del usuario. Vuelve a iniciar sesión.')
+
+    // Solo los proyectos y clientes del usuario autenticado
+    const [proy, cli] = await Promise.all([
+      listProyectos(userId),
+      listClientes(userId),
+    ])
     proyectos.value = proy
     clientes.value = cli
   } catch (e) {

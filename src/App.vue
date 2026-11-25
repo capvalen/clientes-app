@@ -12,6 +12,7 @@ import {
   IconMenu2,
   IconX,
   IconId,
+  IconFileInvoice,
 } from '@tabler/icons-vue'
 import { isAuthenticated, logout as cerrarSesion, ensureSession } from './api/pocketbase'
 import { isDniAdmin } from './utils/session'
@@ -123,6 +124,7 @@ function logout() {
         <RouterLink to="/servicio"><IconTools :size="16" /> Servicios</RouterLink>
         <RouterLink to="/cobro"><IconCash :size="16" /> Cobros</RouterLink>
         <RouterLink v-if="dniAdmin" to="/dnis"><IconId :size="16" /> Proyecto DNIs</RouterLink>
+        <RouterLink to="/cotizador"><IconFileInvoice :size="16" /> Cotizador</RouterLink>
         <RouterLink to="/opciones"><IconSettings :size="16" /> Opciones</RouterLink>
       </nav>
     </header>
@@ -166,6 +168,7 @@ function logout() {
           <RouterLink to="/servicio"><IconTools :size="18" /> Servicios</RouterLink>
           <RouterLink to="/cobro"><IconCash :size="18" /> Cobros</RouterLink>
           <RouterLink v-if="dniAdmin" to="/dnis"><IconId :size="18" /> Proyecto DNIs</RouterLink>
+          <RouterLink to="/cotizador"><IconFileInvoice :size="18" /> Cotizador</RouterLink>
           <RouterLink to="/opciones"><IconSettings :size="18" /> Opciones</RouterLink>
         </nav>
 

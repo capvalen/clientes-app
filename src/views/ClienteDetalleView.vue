@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   IconCheck,
@@ -46,6 +46,7 @@ import {
   updateNota,
   deleteNota,
   parseSocios,
+  getUserId,
   type Cliente,
   type Socio,
   type NotaRegistro,
@@ -315,6 +316,8 @@ const secretoForm = ref<{ titulo: string; textos: { texto: string; cifrado: bool
 // Prompt de clave maestra para revelar/editar secretos
 const showKeyPrompt = ref(false)
 const keyInput = ref('')
+/** Input de la clave maestra (para enfocarlo al abrir el modal) */
+const keyInputEl = ref<HTMLInputElement | null>(null)
 const keyError = ref('')
 /** Cipher de referencia para validar la clave ingresada */
 let pendingKeyCheck: string | null = null
@@ -358,10 +361,13 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
+    const userId = getUserId()
+    if (!userId) throw new Error('No se pudo obtener el id del usuario. Vuelve a iniciar sesión.')
+
     const [cli, proy, serv, nts] = await Promise.all([
       getCliente(id),
-      listProyectos(),
-      listServicios(),
+      listProyectos(userId),
+      listServicios(userId),
       listNotasPorCliente(id),
     ])
     cliente.value = cli
@@ -865,6 +871,8 @@ function promptMasterKey(check: string, action: () => void | Promise<void>) {
   keyInput.value = ''
   keyError.value = ''
   showKeyPrompt.value = true
+  // Enfoca el input del password en cuanto el modal se monta
+  void nextTick(() => keyInputEl.value?.focus())
 }
 
 async function confirmarClave() {
@@ -1563,7 +1571,13 @@ async function saveSecretoEdit() {
             <p class="hint">Ingresa tu clave maestra para continuar.</p>
             <label>
               Clave
-              <input v-model="keyInput" type="password" autocomplete="off" required />
+              <input
+                ref="keyInputEl"
+                v-model="keyInput"
+                type="password"
+                autocomplete="off"
+                required
+              />
             </label>
             <p v-if="keyError" class="error">{{ keyError }}</p>
             <div class="row">
