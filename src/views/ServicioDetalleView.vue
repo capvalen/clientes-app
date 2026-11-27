@@ -10,6 +10,7 @@ import {
   IconCash,
   IconCheck,
   IconChevronDown,
+  IconCircle,
   IconClock,
   IconCoin,
   IconDeviceIpadHorizontalUp,
@@ -58,6 +59,7 @@ import { sumarPeriocidad, PERIOCIDAD_LABEL } from '../utils/cuotas'
 import { showMontos, monto, toggleMontos } from '../utils/montos'
 import Breadcrumbs from '../components/Breadcrumbs.vue'
 import Modal from '../components/Modal.vue'
+import Monto from '../components/Monto.vue'
 import DropzoneFile from '../components/DropzoneFile.vue'
 import MetodoPagoPicker from '../components/MetodoPagoPicker.vue'
 
@@ -145,8 +147,8 @@ async function eliminarServicio() {
   }
 }
 
-const ESTADO_PAGO: Record<string, { label: string; color: string; bg: string }> = {
-  pendiente: { label: 'Pendiente', color: '#9a6700', bg: '#fff8c5' },
+const ESTADO_PAGO: Record<string, { label: string; color: string; bg: string; border?: string }> = {
+  pendiente: { label: 'Pendiente', color: 'rgb(255, 167, 28)', bg: '#ffffff', border: '1px solid rgb(255, 167, 28)' },
   pagado: { label: 'Pagado', color: '#1a7f37', bg: '#dafbe1' },
   anulado: { label: 'Anulado', color: '#e5484d', bg: '#ffebe9' },
 }
@@ -918,8 +920,8 @@ onMounted(load)
         </form>
       </Modal>
 
-      <!-- Pagos -->
-      <section class="card">
+      <!-- Cuotas -->
+      <section class="pagos-section">
         <div class="tab-head">
           <h2><IconWallet :size="18" /> Cuotas</h2>
           <div class="tab-actions">
@@ -1016,13 +1018,34 @@ onMounted(load)
         </p>
 
         <ul v-else class="list">
-          <li v-for="pago in pagosFiltrados" :key="pago.id">
-            <div class="pago-wrap">
-              <button class="pago-item" type="button" @click="openPagoDetalle(pago)">
-                <strong class="monto">{{ monto(pago.monto) }}</strong>
-                <span class="pago-sep">·</span>
-                <span class="pago-desc">{{ pago.observaciones || '' }}</span>
-                <span v-if="pago.que_es === 'deuda'" class="que-es-badge">Deuda</span>
+          <li v-for="(pago, index) in pagosFiltrados" :key="pago.id">
+            <div class="pago-left">
+              <button
+                class="pago-titulo"
+                type="button"
+                title="Ver detalle"
+                @click="openPagoDetalle(pago)"
+              >
+                Cuota #{{ index + 1 }}
+              </button>
+
+              <p v-if="pago.observaciones" class="pago-obs">
+                <IconNotes :size="13" />
+                <span class="pago-obs-text">{{ pago.observaciones }}</span>
+              </p>
+
+              <div class="pago-sub">
+                <span class="pago-fecha">
+                  <IconCalendar :size="13" />
+                  {{ formatFechaCorta(pago.fecha) }}
+                </span>
+                <span v-if="pago.que_es === 'deuda'" class="pago-adelanto">
+                  <span class="pa-label">Adelanto: </span>
+                  <Monto :value="pago.adelanto" />
+                </span>
+              </div>
+
+              <div class="pago-tags">
                 <span
                   v-if="pago.metodo_pago && pago.estado !== 'pendiente'"
                   class="metodo-badge"
@@ -1039,43 +1062,53 @@ onMounted(load)
                   target="_blank"
                   rel="noopener"
                   :title="`Abrir ${file.name}`"
-                  @click.stop
                 >
                   <IconPaperclip :size="16" />
                 </a>
-              </button>
-              <span class="pago-fecha">
-                <IconCalendar :size="13" />
-                {{ formatFechaCorta(pago.fecha) }}
-              </span>
-              <span v-if="tieneAdelanto(pago)" class="pago-adelanto">
-                Adelanto: {{ monto(pago.adelanto) }}
-              </span>
+              </div>
             </div>
-            <span
-              class="badge"
-              :style="{ color: pagoInfo(pago.estado).color, background: pagoInfo(pago.estado).bg }"
-            >
-              <IconCheck v-if="pago.estado === 'pagado'" :size="12" />
-              {{ pagoInfo(pago.estado).label }}
-            </span>
-            <button
-              v-if="pago.estado === 'pendiente'"
-              class="realizar-pago"
-              type="button"
-              title="Realizar pago"
-              @click="openRealizarPago(pago)"
-            >
-              <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
-            </button>
-            <button
-              class="edit-pago"
-              type="button"
-              title="Editar pago"
-              @click="openPagoEdit(pago)"
-            >
-              <IconEdit :size="16" />
-            </button>
+
+            <div class="pago-right">
+              <button
+                class="monto-btn"
+                type="button"
+                title="Ver detalle"
+                @click="openPagoDetalle(pago)"
+              >
+                <strong class="monto"><Monto :value="pago.monto" /></strong>
+              </button>
+              <span
+                class="badge"
+                :style="{
+                  color: pagoInfo(pago.estado).color,
+                  background: pagoInfo(pago.estado).bg,
+                  border: pagoInfo(pago.estado).border,
+                }"
+              >
+                <IconCheck v-if="pago.estado === 'pagado'" :size="12" />
+                <IconCircle v-else-if="pago.estado === 'pendiente'" :size="12" />
+                {{ pagoInfo(pago.estado).label }}
+              </span>
+              <div class="pago-actions">
+                <button
+                  v-if="pago.estado === 'pendiente'"
+                  class="realizar-pago"
+                  type="button"
+                  title="Realizar pago"
+                  @click="openRealizarPago(pago)"
+                >
+                  <IconDeviceIpadHorizontalUp :size="16" /> Realizar pago
+                </button>
+                <button
+                  class="edit-pago"
+                  type="button"
+                  title="Editar pago"
+                  @click="openPagoEdit(pago)"
+                >
+                  <IconEdit :size="16" />
+                </button>
+              </div>
+            </div>
           </li>
         </ul>
 
@@ -1128,6 +1161,7 @@ onMounted(load)
         <!-- Constancia de pago (ticket) -->
         <Modal
           v-if="selectedPago"
+          title="Detalle de cuota"
           size="sm"
           @close="selectedPago = null"
         >
@@ -1194,7 +1228,11 @@ onMounted(load)
                 <span><IconCheck :size="14" /> Estado</span>
                 <span
                   class="badge"
-                  :style="{ color: pagoInfo(selectedPago.estado).color, background: pagoInfo(selectedPago.estado).bg }"
+                  :style="{
+                    color: pagoInfo(selectedPago.estado).color,
+                    background: pagoInfo(selectedPago.estado).bg,
+                    border: pagoInfo(selectedPago.estado).border,
+                  }"
                 >
                   <IconCheck v-if="selectedPago.estado === 'pagado'" :size="12" />
                   {{ pagoInfo(selectedPago.estado).label }}
@@ -1363,12 +1401,18 @@ onMounted(load)
   margin: 0;
 }
 
-.card h2 {
+.card h2,
+.pagos-section h2 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 1.1rem;
-  margin: 0 0 1rem;
+  margin: 0;
+}
+
+/* Sección de cuotas sin card padre (solo espaciado) */
+.pagos-section {
+  margin-top: 1rem;
 }
 
 .tab-head {
@@ -1689,70 +1733,134 @@ button.danger:hover {
   background: var(--color-background);
 }
 
-.pago-item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.4rem;
-  padding: 0.25rem 0;
-  border: 0;
-  background: none;
-  color: var(--color-text);
-  font-size: 0.95rem;
-  text-align: left;
-  cursor: pointer;
-  border-radius: 0.25rem;
-  min-width: 0;
-}
-
-.pago-wrap {
-  flex: 1;
+.pago-left {
   display: flex;
   flex-direction: column;
+  gap: 0.35rem;
   min-width: 0;
+  flex: 1 1 220px;
 }
 
-.pago-sep {
+.pago-titulo {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pago-titulo:hover {
+  color: var(--color-primary-dark);
+}
+
+.pago-obs {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.82rem;
   color: var(--color-text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
-.pago-desc {
-  flex: 0 1 auto;
+.pago-obs > svg {
+  flex-shrink: 0;
+}
+
+.pago-obs-text {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.pago-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--color-text-2);
 }
 
 .pago-fecha {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  margin-top: 0.2rem;
-  font-size: 0.78rem;
   font-style: italic;
-  color: var(--color-text-2);
 }
 
 .pago-adelanto {
-  margin-top: 0.15rem;
-  font-size: 0.78rem;
   color: #0969da;
 }
 
-.que-es-badge {
+/* El monto del adelanto debe verse del mismo tamaño que la fecha */
+.pago-adelanto :deep(.monto-val) {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+}
+
+/* Columna derecha: monto grande, badge debajo y acciones al lado */
+.pago-right {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: end;
+  gap: 0.25rem 0.75rem;
+  margin-left: auto;
+}
+
+.pago-right > .monto-btn {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.pago-right > .badge {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: end;
+}
+
+.pago-right > .pago-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.monto-btn {
   display: inline-flex;
   align-items: center;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #6e7781;
-  background: #eaeef2;
-  flex-shrink: 0;
+  justify-content: flex-end;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.monto-btn:hover .monto {
+  color: var(--color-primary-dark);
+}
+
+.pago-right .monto {
+  font-family: 'Droid Sans', Inter, sans-serif;
+  font-size: 18px;
+  line-height: 20px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .realizar-pago {
@@ -1775,14 +1883,6 @@ button.danger:hover {
   background: hsl(var(--primary) / 0.12);
 }
 
-.pago-item:hover {
-  color: var(--color-primary-dark);
-}
-
-.pago-item .monto {
-  font-weight: 700;
-}
-
 .metodo-badge {
   display: inline-flex;
   align-items: center;
@@ -1792,6 +1892,15 @@ button.danger:hover {
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Contenedor de chips y adjuntos del pago (en fila en celular) */
+.pago-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .adjunto {
@@ -2004,6 +2113,7 @@ button.danger:hover {
   align-items: center;
   gap: 0.25rem;
   padding: 0.2rem 0.6rem;
+  border: 1px solid transparent;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -2119,6 +2229,143 @@ button.danger:hover {
   .estado-menu {
     left: auto;
     right: 0;
+  }
+
+  /* ---- Lista de cuotas (patrón móvil de CobroView) ---- */
+  .list li {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    padding: 0.85rem;
+  }
+
+  /* Aplanar los wrappers para tratar cada dato como una fila independiente */
+  .pago-left,
+  .pago-right,
+  .pago-sub,
+  .pago-actions {
+    display: contents;
+  }
+
+  /* Título de la fila (Cuota #N) */
+  .list li .pago-titulo {
+    order: 1;
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  /* Descripción con subtítulo y saltos de línea */
+  .list li .pago-obs {
+    order: 2;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 0.3rem;
+    row-gap: 0.15rem;
+    width: 100%;
+    font-size: 0.85rem;
+    font-style: normal;
+    font-weight: 400;
+    color: #6e7781;
+    white-space: pre-wrap;
+  }
+
+  .list li .pago-obs::before {
+    content: 'Descripción:';
+    grid-column: 1 / -1;
+    margin-bottom: 0.15rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #6e7781;
+  }
+
+  /* Filas de datos: etiqueta | valor */
+  .list li .pago-fecha,
+  .list li .pago-adelanto,
+  .list li .monto-btn {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.3rem;
+    width: 100%;
+    font-size: 0.85rem;
+    font-style: normal;
+    font-weight: 400;
+    color: #6e7781;
+  }
+
+  .list li .pago-fecha {
+    order: 3;
+  }
+
+  .list li .pago-adelanto {
+    order: 4;
+  }
+
+  .list li .pago-fecha::before,
+  .list li .pago-adelanto .pa-label {
+    margin-right: auto;
+    flex-shrink: 0;
+  }
+
+  .list li .pago-fecha::before {
+    content: 'Fecha';
+  }
+
+  /* Chips (método) y adjuntos en una fila */
+  .list li .pago-tags {
+    order: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+  }
+
+  /* Monto como fila: etiqueta a la izquierda, valor a la derecha */
+  .list li .monto-btn {
+    order: 6;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .list li .monto-btn::before {
+    content: 'Monto';
+    margin-right: auto;
+    flex-shrink: 0;
+    font-weight: 400;
+  }
+
+  .list li .monto-btn .monto {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #6e7781;
+  }
+
+  /* Estado debajo del monto */
+  .list li .pago-right > .badge {
+    order: 7;
+    align-self: flex-end;
+    margin-top: 0.15rem;
+  }
+
+  /* Botones a ancho completo */
+  .list li .realizar-pago {
+    order: 8;
+    width: 100%;
+  }
+
+  .list li .edit-pago {
+    order: 9;
+    width: 100%;
+    gap: 0.4rem;
+  }
+
+  .list li .edit-pago::after {
+    content: 'Editar';
   }
 }
 </style>

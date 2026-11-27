@@ -58,8 +58,8 @@ const clientes = ref<Cliente[]>([])
 const proyectos = ref<Proyecto[]>([])
 const servicios = ref<Servicio[]>([])
 
-const ESTADO_PAGO: Record<string, { label: string; color: string; bg: string }> = {
-  pendiente: { label: 'Pendiente', color: '#9a6700', bg: '#fff8c5' },
+const ESTADO_PAGO: Record<string, { label: string; color: string; bg: string; border?: string }> = {
+  pendiente: { label: 'Pendiente', color: 'rgb(255, 167, 28)', bg: '#ffffff', border: '1px solid rgb(255, 167, 28)' },
   pagado: { label: 'Pagado', color: '#1a7f37', bg: '#dafbe1' },
   anulado: { label: 'Anulado', color: '#e5484d', bg: '#ffebe9' },
 }
@@ -599,7 +599,7 @@ onMounted(load)
             <div class="cobro-right">
               <span class="montos">
                 <strong class="monto" :class="{ tachado: tieneAdelanto(p) }">
-                  {{ monto(p.monto) }}
+                  {{ showMontos && Number(p.monto || 0) === 0 ? 'Gratis' : monto(p.monto) }}
                 </strong>
                 <strong v-if="tieneAdelanto(p)" class="monto saldo">
                   {{ monto(pendienteDe(p)) }}
@@ -607,7 +607,11 @@ onMounted(load)
               </span>
               <span
                 class="badge"
-                :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
+                :style="{
+                  color: pagoInfo(p.estado).color,
+                  background: pagoInfo(p.estado).bg,
+                  border: pagoInfo(p.estado).border,
+                }"
               >
                 <IconCheck v-if="p.estado === 'pagado'" :size="14" />
                 <IconCircle v-else-if="p.estado === 'pendiente'" :size="14" />
@@ -675,7 +679,7 @@ onMounted(load)
             <div class="cobro-right">
               <span class="montos">
                 <strong class="monto" :class="{ tachado: tieneAdelanto(p) }">
-                  {{ monto(p.monto) }}
+                  {{ showMontos && Number(p.monto || 0) === 0 ? 'Gratis' : monto(p.monto) }}
                 </strong>
                 <strong v-if="tieneAdelanto(p)" class="monto saldo">
                   {{ monto(pendienteDe(p)) }}
@@ -683,7 +687,11 @@ onMounted(load)
               </span>
               <span
                 class="badge"
-                :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
+                :style="{
+                  color: pagoInfo(p.estado).color,
+                  background: pagoInfo(p.estado).bg,
+                  border: pagoInfo(p.estado).border,
+                }"
               >
                 <IconCheck v-if="p.estado === 'pagado'" :size="14" />
                 <IconCircle v-else-if="p.estado === 'pendiente'" :size="14" />
@@ -751,7 +759,7 @@ onMounted(load)
             <div class="cobro-right">
               <span class="montos">
                 <strong class="monto" :class="{ tachado: tieneAdelanto(p) }">
-                  {{ monto(p.monto) }}
+                  {{ showMontos && Number(p.monto || 0) === 0 ? 'Gratis' : monto(p.monto) }}
                 </strong>
                 <strong v-if="tieneAdelanto(p)" class="monto saldo">
                   {{ monto(pendienteDe(p)) }}
@@ -759,7 +767,11 @@ onMounted(load)
               </span>
               <span
                 class="badge"
-                :style="{ color: pagoInfo(p.estado).color, background: pagoInfo(p.estado).bg }"
+                :style="{
+                  color: pagoInfo(p.estado).color,
+                  background: pagoInfo(p.estado).bg,
+                  border: pagoInfo(p.estado).border,
+                }"
               >
                 <IconCheck v-if="p.estado === 'pagado'" :size="14" />
                 <IconCircle v-else-if="p.estado === 'pendiente'" :size="14" />
@@ -914,6 +926,7 @@ onMounted(load)
               :style="{
                 color: pagoInfo(selectedPago.estado).color,
                 background: pagoInfo(selectedPago.estado).bg,
+                border: pagoInfo(selectedPago.estado).border,
               }"
             >
               <IconCheck v-if="selectedPago.estado === 'pagado'" :size="12" />
@@ -1143,16 +1156,38 @@ onMounted(load)
 }
 
 .cobro-right {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: end;
+  gap: 0.25rem 0.75rem;
   margin-left: auto;
 }
 
+/* Monto arriba y badge de estado debajo */
+.cobro-right > .montos {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.cobro-right > .badge {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: end;
+}
+
+/* Botones a la derecha, ocupando las dos filas */
+.cobro-right > .realizar-pago,
+.cobro-right > .detalle-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
 .cobro-right .monto {
-  font-size: 1.1rem;
+  font-family: 'Droid Sans', Inter, sans-serif;
+  font-size: 18px;
+  line-height: 20px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1224,6 +1259,7 @@ onMounted(load)
   font-size: 0.82rem;
   color: var(--color-text-2);
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .cliente {
@@ -1265,6 +1301,7 @@ onMounted(load)
   align-items: center;
   gap: 0.3rem;
   padding: 0.2rem 0.6rem;
+  border: 1px solid transparent;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -1677,7 +1714,6 @@ button.ghost {
   }
 
   /* 2) Datos en gris, cada uno en una fila: etiqueta | valor */
-  .cobro-obs,
   .cobro-sub > .cliente,
   .cobro-sub > .pago-fecha,
   .cobro-sub > .pago-dia-max,
@@ -1693,7 +1729,26 @@ button.ghost {
     color: #6e7781;
   }
 
-  .cobro-obs::before,
+  /* Descripción: subtítulo pequeño y texto con saltos de línea respetados */
+  .cobro-obs {
+    display: block;
+    width: 100%;
+    font-size: 0.85rem;
+    font-style: normal;
+    font-weight: 400;
+    color: #6e7781;
+    white-space: pre-wrap;
+  }
+
+  .cobro-obs::before {
+    content: 'Descripción:';
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #6e7781;
+  }
+
   .cliente::before,
   .pago-fecha::before,
   .pago-dia-max::before,
@@ -1701,10 +1756,6 @@ button.ghost {
   .adelanto::before {
     margin-right: auto;
     flex-shrink: 0;
-  }
-
-  .cobro-obs::before {
-    content: 'Descripción';
   }
   .cliente::before {
     content: 'Cliente';
@@ -1755,12 +1806,12 @@ button.ghost {
     display: none;
   }
   .adelanto {
-    order: 7;
+    order: 8;
   }
 
-  /* 3) Badge de estado y botón largo */
+  /* 3) Badge de estado debajo del monto y botón largo */
   .cobro-right > .badge {
-    order: 8;
+    order: 7;
     align-self: flex-end;
     margin-top: 0.15rem;
   }

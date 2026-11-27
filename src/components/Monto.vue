@@ -18,6 +18,10 @@ const texto = computed(() => montoVisible(props.value))
 
 <style scoped>
 .monto-val {
+  font-family: 'Droid Sans', Inter, sans-serif;
+  font-size: 18px;
+  line-height: 20px;
+  font-weight: 700;
   white-space: nowrap;
 }
 

@@ -457,12 +457,19 @@ button.ghost:hover {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .peso-select {
   padding: 0.35rem 0.5rem;
   font-size: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.actividad-acciones .icon-btn {
+  flex-shrink: 0;
 }
 
 .resumen-grid {
@@ -571,6 +578,12 @@ button.ghost:hover {
 
   .actividad-acciones {
     justify-content: flex-end;
+    width: 100%;
+  }
+
+  .peso-select {
+    flex: 1 1 0;
+    min-width: 0;
   }
 }
 </style>
